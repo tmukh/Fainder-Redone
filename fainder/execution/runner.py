@@ -242,5 +242,5 @@ def main() -> None:
     logger.trace(f"total_time, {end - start}")
 
 
-if __name__ == "main":
+if __name__ == "__main__":
     main()

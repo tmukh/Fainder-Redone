@@ -62,7 +62,11 @@ def query_histogram(
         else:
             fraction = values[:bin_index].sum()
             if bins[bin_index + 1] == reference:
-                if "e" in comparison and estimation_mode == "over" and bin_index < len(bins) - 2:
+                if (
+                    "e" in comparison
+                    and estimation_mode == "over"
+                    and bin_index < len(bins) - 2
+                ):
                     # All bins except the last are left-closed, so we have to add the
                     # value of the next bin to the fraction if the reference value is
                     # equal to the upper bin edge.
@@ -75,7 +79,8 @@ def query_histogram(
                 pass
             elif estimation_mode == "continuous_value":
                 fraction += (
-                    (reference - bins[bin_index]) / (bins[bin_index + 1] - bins[bin_index])
+                    (reference - bins[bin_index])
+                    / (bins[bin_index + 1] - bins[bin_index])
                 ) * values[bin_index]
             elif estimation_mode == "cubic_spline":
                 bin_mids = np.hstack((bins[0], bins[:-1] + np.diff(bins) / 2, bins[-1]))
@@ -106,7 +111,8 @@ def query_histogram(
                 pass
             elif estimation_mode == "continuous_value":
                 fraction += (
-                    (bins[bin_index + 1] - reference) / (bins[bin_index + 1] - bins[bin_index])
+                    (bins[bin_index + 1] - reference)
+                    / (bins[bin_index + 1] - bins[bin_index])
                 ) * values[bin_index]
             elif estimation_mode == "cubic_spline":
                 bin_mids = np.hstack((bins[0], bins[:-1] + np.diff(bins) / 2, bins[-1]))
@@ -123,7 +129,9 @@ def query_histogram(
 
     if density:
         return bool(np.round(fraction, ROUNDING_PRECISION) >= np.float32(percentile))
-    return bool(np.round(fraction / values.sum(), ROUNDING_PRECISION) >= np.float32(percentile))
+    return bool(
+        np.round(fraction / values.sum(), ROUNDING_PRECISION) >= np.float32(percentile)
+    )
 
 
 def query_conversion_matrix(
@@ -174,7 +182,9 @@ def query_conversion_matrix(
 
     if density:
         return bool(np.round(fraction, ROUNDING_PRECISION) >= np.float32(percentile))
-    return bool(np.round(fraction / values.sum(), ROUNDING_PRECISION) >= np.float32(percentile))
+    return bool(
+        np.round(fraction / values.sum(), ROUNDING_PRECISION) >= np.float32(percentile)
+    )
 
 
 def query_histogram_collection(
@@ -205,7 +215,10 @@ def query_histogram_collection(
             for query in queries:
                 query_start = time.perf_counter()
                 fn = partial(
-                    query_histogram, estimation_mode=estimation_mode, query=query, density=density
+                    query_histogram,
+                    estimation_mode=estimation_mode,
+                    query=query,
+                    density=density,
                 )
                 results = pool.map(fn, [hist for _, hist in hists])
                 matches.append({idx for j, (idx, _) in enumerate(hists) if results[j]})
@@ -274,7 +287,9 @@ def query_rebinned_collection(
                             ),
                             zip(hists[i][1], itertools.repeat(bins)),
                         )
-                        query_matches.update(hists[i][0][np.array(results, dtype=np.bool_)])
+                        query_matches.update(
+                            hists[i][0][np.array(results, dtype=np.bool_)]
+                        )
                     else:
                         # Reference value not in cluster range
                         if (reference <= bins[0] and "g" in comparison) or (
@@ -413,7 +428,9 @@ def query_local_index(
                 )
                 if "l" in comparison:
                     hist_index = np.searchsorted(
-                        pctl_index[i][pctl_mode][0][:, bin_index], dtype.type(percentile), "left"
+                        pctl_index[i][pctl_mode][0][:, bin_index],
+                        dtype.type(percentile),
+                        "left",
                     )
                     query_matches.update(
                         np.zeros(1, dtype=np.uint32)
@@ -422,7 +439,9 @@ def query_local_index(
                     )
                 elif "g" in comparison:
                     hist_index = np.searchsorted(
-                        pctl_index[i][pctl_mode][0][:, bin_index], dtype.type(percentile), "right"
+                        pctl_index[i][pctl_mode][0][:, bin_index],
+                        dtype.type(percentile),
+                        "right",
                     )
                     query_matches.update(
                         np.zeros(1, dtype=np.uint32)
@@ -487,7 +506,9 @@ def trace_local_index(
                 np.clip(np.searchsorted(bins, reference, "left") - 1, 0, len(bins) - 1)  # type: ignore
                 + bin_mode
             )
-            logger.trace(f"query_bin_search_time, {time.perf_counter() - pre_bin_search}")
+            logger.trace(
+                f"query_bin_search_time, {time.perf_counter() - pre_bin_search}"
+            )
             if "l" in comparison:
                 pre_hist_search = time.perf_counter()
                 hist_index = np.searchsorted(
@@ -497,8 +518,12 @@ def trace_local_index(
                 matches.update(pctl_index[i][pctl_mode][1][hist_index:, bin_index])
                 post_result_update = time.perf_counter()
 
-                logger.trace(f"query_hist_search_time, {post_hist_search - pre_hist_search}")
-                logger.trace(f"query_result_update_time, {post_result_update - post_hist_search}")
+                logger.trace(
+                    f"query_hist_search_time, {post_hist_search - pre_hist_search}"
+                )
+                logger.trace(
+                    f"query_result_update_time, {post_result_update - post_hist_search}"
+                )
             elif "g" in comparison:
                 pre_hist_search = time.perf_counter()
                 hist_index = np.searchsorted(
@@ -508,8 +533,12 @@ def trace_local_index(
                 matches.update(pctl_index[i][pctl_mode][1][:hist_index, bin_index])
                 post_result_update = time.perf_counter()
 
-                logger.trace(f"query_hist_search_time, {post_hist_search - pre_hist_search}")
-                logger.trace(f"query_result_update_time, {post_result_update - post_hist_search}")
+                logger.trace(
+                    f"query_hist_search_time, {post_hist_search - pre_hist_search}"
+                )
+                logger.trace(
+                    f"query_result_update_time, {post_result_update - post_hist_search}"
+                )
             else:
                 raise ValueError("Invalid comparison.")
         else:
@@ -519,7 +548,9 @@ def trace_local_index(
             ):
                 matches.update(pctl_index[i][pctl_mode][1][:, 0])
             post_cluster_skip = time.perf_counter()
-            logger.trace(f"query_cluster_skip_time, {post_cluster_skip - pre_cluster_skip}")
+            logger.trace(
+                f"query_cluster_skip_time, {post_cluster_skip - pre_cluster_skip}"
+            )
 
     end = time.perf_counter()
     logger.trace(f"query_time, {end - start}")
@@ -546,10 +577,16 @@ def init_index_workers(
         index_part: list[tuple[FArray, UInt32Array]] = []
         for pointers in cluster:
             pctls: FArray = np.ndarray(
-                (n_hists[i], n_bins - mode), dtype=index_dtype, order="F", buffer=pointers[0].buf
+                (n_hists[i], n_bins - mode),
+                dtype=index_dtype,
+                order="F",
+                buffer=pointers[0].buf,
             )
             ids: UInt32Array = np.ndarray(
-                (n_hists[i], n_bins - mode), dtype=np.uint32, order="F", buffer=pointers[1].buf
+                (n_hists[i], n_bins - mode),
+                dtype=np.uint32,
+                order="F",
+                buffer=pointers[1].buf,
             )
             index_part.append((pctls, ids))
         pctl_index.append(tuple(index_part))  # type: ignore
@@ -592,12 +629,16 @@ def query_index_worker(
             )
             if "l" in comparison:
                 hist_index = np.searchsorted(
-                    pctl_index[i][pctl_mode][0][:, bin_index], dtype.type(percentile), "left"
+                    pctl_index[i][pctl_mode][0][:, bin_index],
+                    dtype.type(percentile),
+                    "left",
                 )
                 matches.update(pctl_index[i][pctl_mode][1][hist_index:, bin_index])
             elif "g" in comparison:
                 hist_index = np.searchsorted(
-                    pctl_index[i][pctl_mode][0][:, bin_index], dtype.type(percentile), "right"
+                    pctl_index[i][pctl_mode][0][:, bin_index],
+                    dtype.type(percentile),
+                    "right",
                 )
                 matches.update(pctl_index[i][pctl_mode][1][:hist_index, bin_index])
             else:
@@ -622,8 +663,58 @@ def query_index(
 ) -> list[set[np.uint32]]:
     matches: list[set[np.uint32]]
 
+    # Rust Integration (Hot Path)
+    # We attempt to use the Rust backend if it is available and appropriate
+    import os
+
+    if not os.environ.get("FAINDER_NO_RUST"):
+        try:
+            from fainder import fainder_core as fainder_core
+
+            # Check if we are in "rebinning" mode (single index per cluster)
+            if len(pctl_index[0]) == 1:
+                logger.info("Using Rust backend for query execution")
+
+                # Prepare data for Rust: Flatten the tuple structure
+                # pctl_index in Python is list[tuple[tuple[FArray, UInt32Array]]] for rebinning
+                # Rust expects list[tuple[FArray, UInt32Array]]
+                rust_input_index = [cluster[0] for cluster in pctl_index]
+
+                # Initialize Rust Index (flattens memory)
+                # cluster_bins is list[F64Array]
+                rust_index = fainder_core.RebinningIndex(rust_input_index, cluster_bins)
+
+                start = time.perf_counter()
+
+                # Run queries in parallel (Rust Rayon)
+                # queries: list[tuple[float, str, float]]
+                raw_results = rust_index.run_queries(queries, index_mode)
+
+                end = time.perf_counter()
+                logger.debug(
+                    f"Rust index-based query execution time: {end - start:.6f}s"
+                )
+                logger.trace(f"query_collection_time, {end - start}")
+
+                # Convert Rust results (list[list[u32]]) to expected format (list[set[u32]])
+                # This conversion might add some overhead, but sets are required by interface
+                matches = [set(res) for res in raw_results]
+                return matches
+
+        except ImportError:
+            logger.warning(
+                "fainder_core not found, falling back to Python implementation"
+            )
+        except Exception as e:
+            logger.error(
+                f"Rust backend failed: {e}. Falling back to Python implementation"
+            )
+
+    # Fallback to Python Implementation (Cold Path)
     if n_workers is None:
-        return query_local_index(pctl_index, cluster_bins, index_mode, queries, suppress_results)
+        return query_local_index(
+            pctl_index, cluster_bins, index_mode, queries, suppress_results
+        )
     if n_workers <= 0:
         raise ValueError("Number of workers must greater than 0 (or None).")
 

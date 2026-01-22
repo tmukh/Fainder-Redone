@@ -91,3 +91,12 @@ talk/
 
 # Include the LLM predicate workload in Git
 !/data/llm_workload/
+
+# Rust & Env
+target/
+.venv/
+*.so
+logs/
+.python-version
+*.tmp
+

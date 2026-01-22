@@ -11,6 +11,7 @@ from fainder.execution.baselines import query_binsort, query_dist_collection
 from fainder.execution.percentile_queries import (
     query_conversion_collection,
     query_histogram_collection,
+    query_index,
     query_local_index,
     query_rebinned_collection,
     trace_local_index,
@@ -180,8 +181,8 @@ def run(
         if workers:
             logger.debug("Ignoring --workers as a single index query cannot be parallelized")
         if input_type == "index":
-            results = query_local_index(
-                pctl_index, cluster_bins, index_mode, [query], suppress_results
+            results = query_index(
+                pctl_index, cluster_bins, index_mode, [query], None, suppress_results
             )
         else:
             results = [trace_local_index(pctl_index, cluster_bins, index_mode, query)]
