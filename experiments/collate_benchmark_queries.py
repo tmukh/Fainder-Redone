@@ -24,7 +24,14 @@ def parse_args() -> argparse.Namespace:
         "-d",
         "--dataset",
         type=str,
-        choices=["sportstables", "open_data_usa", "gittables", "dev_small", "eval_medium", "eval_large"],
+        choices=[
+            "sportstables",
+            "open_data_usa",
+            "gittables",
+            "dev_small",
+            "eval_medium",
+            "eval_large",
+        ],
         help="The dataset to use for the experiment.",
     )
     parser.add_argument(

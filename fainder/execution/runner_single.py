@@ -12,7 +12,6 @@ from fainder.execution.percentile_queries import (
     query_conversion_collection,
     query_histogram_collection,
     query_index,
-    query_local_index,
     query_rebinned_collection,
     trace_local_index,
 )
