@@ -1,27 +1,32 @@
 use numpy::{PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::prelude::*;
 
+/// Internal structure holding the SoA data for one index variant (e.g. pctl_mode=0 or 1)
+pub struct SubIndex {
+    // values = column-major flattened percentile matrix
+    pub values: Vec<f32>,
+    // indices = column-major flattened ids matrix
+    pub indices: Vec<u32>,
+}
+
 #[pyclass]
-pub struct RebinningIndex {
+pub struct FainderIndex {
     // sizes[i] = number of histograms in cluster i
     cluster_sizes: Vec<usize>,
 
     // bins[i] = bin edges for cluster i (1D)
     bins: Vec<Vec<f64>>,
 
-    // values[i] = column-major flattened percentile matrix for cluster i
-    // Layout: [bin0 all hists, bin1 all hists, ...]
-    cluster_values: Vec<Vec<f32>>,
-
-    // indices[i] = column-major flattened ids matrix for cluster i
-    cluster_indices: Vec<Vec<u32>>,
+    // variants[cluster_i][variant_j]
+    variants: Vec<Vec<SubIndex>>,
 }
 
 #[pymethods]
-impl RebinningIndex {
+impl FainderIndex {
     #[new]
     pub fn new(
-        pctl_index: Vec<(PyReadonlyArray2<f32>, PyReadonlyArray2<u32>)>,
+        // pctl_index: list[list[tuple[FArray, UInt32Array]]]
+        pctl_index: &Bound<'_, pyo3::types::PyList>,
         cluster_bins: Vec<PyReadonlyArray1<f64>>,
     ) -> PyResult<Self> {
         let n_clusters = pctl_index.len();
@@ -39,82 +44,112 @@ impl RebinningIndex {
             bins_data.push(b_view.iter().copied().collect());
         }
 
-        // Copy + transpose to column-major layout for cache-friendly bin access
-        let mut cluster_values: Vec<Vec<f32>> = Vec::with_capacity(n_clusters);
-        let mut cluster_indices: Vec<Vec<u32>> = Vec::with_capacity(n_clusters);
         let mut cluster_sizes: Vec<usize> = Vec::with_capacity(n_clusters);
+        let mut all_variants: Vec<Vec<SubIndex>> = Vec::with_capacity(n_clusters);
 
-        for (p_array, i_array) in pctl_index {
-            let p = p_array.as_array();   // ArrayView2<f32>
-            let ids = i_array.as_array(); // ArrayView2<u32>
+        // Iterate PyList manually
+        for (cluster_idx, cluster_item) in pctl_index.iter().enumerate() {
+            let variants_list = cluster_item
+                .downcast::<pyo3::types::PyList>()
+                .map_err(|_| pyo3::exceptions::PyTypeError::new_err("Expected list of variants"))?;
 
-            let n_hists = p.shape()[0];
-            let n_bins = p.shape()[1];
+            let mut cluster_subindices: Vec<SubIndex> = Vec::with_capacity(variants_list.len());
+            let mut expected_n_hists = 0;
+            let mut first = true;
 
-            // Basic sanity check: ids must match shape
-            if ids.shape()[0] != n_hists || ids.shape()[1] != n_bins {
-                return Err(pyo3::exceptions::PyValueError::new_err(
-                    "pctl_index arrays shape mismatch",
-                ));
-            }
+            for variant_item in variants_list.iter() {
+                // tuple(p_array, i_array) or list
+                // we treat as tuple
+                let tuple = variant_item
+                    .downcast::<pyo3::types::PyTuple>()
+                    .map_err(|_| {
+                        pyo3::exceptions::PyTypeError::new_err(
+                            "Expected tuple(FArray, UInt32Array)",
+                        )
+                    })?;
 
-            cluster_sizes.push(n_hists);
+                let p_array = tuple.get_item(0)?.extract::<PyReadonlyArray2<f32>>()?;
+                let i_array = tuple.get_item(1)?.extract::<PyReadonlyArray2<u32>>()?;
 
-            let mut val_vec: Vec<f32> = Vec::with_capacity(n_hists * n_bins);
-            let mut idx_vec: Vec<u32> = Vec::with_capacity(n_hists * n_bins);
+                let p = p_array.as_array(); // ArrayView2<f32>
+                let ids = i_array.as_array(); // ArrayView2<u32>
 
-            // column-major flatten: for each bin, iterate all hists
-            for b in 0..n_bins {
-                for h in 0..n_hists {
-                    val_vec.push(p[[h, b]]);
-                    idx_vec.push(ids[[h, b]]);
+                let n_hists = p.shape()[0];
+                let n_bins = p.shape()[1];
+
+                if first {
+                    expected_n_hists = n_hists;
+                    cluster_sizes.push(n_hists);
+                    first = false;
+                } else {
+                    if n_hists != expected_n_hists {
+                        return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                            "Variant n_hists mismatch in cluster {}",
+                            cluster_idx
+                        )));
+                    }
                 }
-            }
 
-            cluster_values.push(val_vec);
-            cluster_indices.push(idx_vec);
+                if ids.shape()[0] != n_hists || ids.shape()[1] != n_bins {
+                    return Err(pyo3::exceptions::PyValueError::new_err(
+                        "pctl_index arrays shape mismatch within variant",
+                    ));
+                }
+
+                let mut val_vec: Vec<f32> = Vec::with_capacity(n_hists * n_bins);
+                let mut idx_vec: Vec<u32> = Vec::with_capacity(n_hists * n_bins);
+
+                // column-major flatten
+                for b in 0..n_bins {
+                    for h in 0..n_hists {
+                        val_vec.push(p[[h, b]]);
+                        idx_vec.push(ids[[h, b]]);
+                    }
+                }
+
+                cluster_subindices.push(SubIndex {
+                    values: val_vec,
+                    indices: idx_vec,
+                });
+            }
+            all_variants.push(cluster_subindices);
         }
 
         Ok(Self {
             cluster_sizes,
             bins: bins_data,
-            cluster_values,
-            cluster_indices,
+            variants: all_variants,
         })
     }
 
-    pub fn run_queries(
+    pub fn run_queries<'py>(
         &self,
+        py: Python<'py>,
         queries: Vec<(f32, String, f64)>,
         index_mode: &str,
-    ) -> PyResult<Vec<Vec<u32>>> {
-        crate::engine::execute_queries(self, queries, index_mode)
+    ) -> PyResult<Vec<PyObject>> {
+        crate::engine::execute_queries(py, self, queries, index_mode)
     }
 }
 
-impl RebinningIndex {
+impl FainderIndex {
     #[inline]
     pub fn get_bins(&self, cluster_idx: usize) -> &[f64] {
         &self.bins[cluster_idx]
     }
 
     #[inline]
-    pub fn get_values(&self, cluster_idx: usize) -> &[f32] {
-        &self.cluster_values[cluster_idx]
-    }
-
-    #[inline]
-    pub fn get_indices(&self, cluster_idx: usize) -> &[u32] {
-        &self.cluster_indices[cluster_idx]
-    }
-
-    #[inline]
-    pub fn get_cluster_size(&self, cluster_idx: usize) -> usize {
-        self.cluster_sizes[cluster_idx]
+    pub fn get_subindex(&self, cluster_idx: usize, variant_idx: usize) -> Option<&SubIndex> {
+        self.variants.get(cluster_idx)?.get(variant_idx)
     }
 
     #[inline]
     pub fn n_clusters(&self) -> usize {
         self.bins.len()
+    }
+
+    #[inline]
+    pub fn get_cluster_size(&self, cluster_idx: usize) -> usize {
+        self.cluster_sizes[cluster_idx]
     }
 }

@@ -647,33 +647,30 @@ def query_index(
         try:
             from fainder import fainder_core as fainder_core
 
-            # Check if we are in "rebinning" mode (single index per cluster)
-            if len(pctl_index[0]) == 1:
-                logger.info("Using Rust backend for query execution")
+            # Determine mode for logging
+            method = "rebinning" if len(pctl_index[0]) == 1 else "conversion"
+            logger.info(f"Using Rust backend for query execution (mode: {method})")
 
-                # Prepare data for Rust: Flatten the tuple structure
-                # pctl_index in Python is list[tuple[tuple[FArray, UInt32Array]]] for rebinning
-                # Rust expects list[tuple[FArray, UInt32Array]]
-                rust_input_index = [cluster[0] for cluster in pctl_index]
+            # Prepare data for Rust
+            # pctl_index is list[tuple[tuple[FArray, UInt32Array], ...]]
+            # Rust expects Vec<Vec<(FArray, UInt32Array)>>
+            # We convert tuples to lists to ensure compatibility with Vec
+            rust_input_index = [list(cluster_variants) for cluster_variants in pctl_index]
 
-                # Initialize Rust Index (flattens memory)
-                # cluster_bins is list[F64Array]
-                rust_index = fainder_core.RebinningIndex(rust_input_index, cluster_bins)
+            # Initialize Rust Index (flattens memory)
+            rust_index = fainder_core.FainderIndex(rust_input_index, cluster_bins)
 
-                start = time.perf_counter()
+            start = time.perf_counter()
 
-                # Run queries in parallel (Rust Rayon)
-                # queries: list[tuple[float, str, float]]
-                raw_results = rust_index.run_queries(queries, index_mode)
+            # Run queries in parallel (Rust Rayon)
+            # Returns list[set[int]] directly (optimized)
+            matches = rust_index.run_queries(queries, index_mode)
 
-                end = time.perf_counter()
-                logger.debug(f"Rust index-based query execution time: {end - start:.6f}s")
-                logger.trace(f"query_collection_time, {end - start}")
+            end = time.perf_counter()
+            logger.debug(f"Rust index-based query execution time: {end - start:.6f}s")
+            logger.trace(f"query_collection_time, {end - start}")
 
-                # Convert Rust results (list[list[u32]]) to expected format (list[set[u32]])
-                # This conversion might add some overhead, but sets are required by interface
-                matches = [set(res) for res in raw_results]
-                return matches
+            return matches
 
         except ImportError:
             logger.warning("fainder_core not found, falling back to Python implementation")

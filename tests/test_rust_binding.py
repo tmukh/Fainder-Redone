@@ -1,17 +1,18 @@
 try:
     from fainder import fainder_core
 except ImportError:
-    import fainder_core
+    from fainder import fainder_core as fainder_core
 
 import numpy as np
 
-RebinningIndex = fainder_core.RebinningIndex
+# Updated class name
+RebinningIndex = fainder_core.FainderIndex
 
 print("Rust extension imported successfully!")
 print(f"Index class: {RebinningIndex}")
 
 # Mock data to test initialization
-# pctl_index: list[tuple[F32Array, UInt32Array]]
+# pctl_index: list[list[tuple[F32Array, UInt32Array]]]
 # cluster_bins: list[F64Array]
 
 n_hists = 10
@@ -29,21 +30,22 @@ for i in range(n_clusters):
     pctls = np.random.rand(n_hists, n_bins).astype(np.float32)
     ids = np.random.randint(0, 1000, (n_hists, n_bins), dtype=np.uint32)
 
-    pctl_index.append((pctls, ids))
+    # Wrap in list to represent variants (1 variant for rebinning)
+    cluster_variants = [(pctls, ids)]
+    pctl_index.append(cluster_variants)
 
 print("Initializing Rust Index...")
-# Rust signature: new(pctl_index: Vec<(PyReadonlyArray2<f32>, PyReadonlyArray2<u32>)>, cluster_bins: Vec<PyReadonlyArray2<f64>>)
+# Rust signature: new(pctl_index, cluster_bins)
 index = RebinningIndex(pctl_index, cluster_bins)
 print("Index initialized!")
 
 # Test query execution
-# queries: Vec<(f32, String, f64)>
 queries = [(0.5, "lt", 50.0), (0.9, "gt", 20.0)]
 
 print("Running queries...")
 results = index.run_queries(queries, "recall")
 print(f"Results: {len(results)} queries executed.")
 for i, res in enumerate(results):
-    print(f"Query {i}: {len(res)} matches")
+    print(f"Query {i}: {len(res)} matches (Type: {type(res)})")
 
 print("Verification complete.")
