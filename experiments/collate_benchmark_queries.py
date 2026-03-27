@@ -29,8 +29,10 @@ def parse_args() -> argparse.Namespace:
             "open_data_usa",
             "gittables",
             "dev_small",
+            "eval_small",
             "eval_medium",
             "eval_large",
+            "eval_10gb",
         ],
         help="The dataset to use for the experiment.",
     )
