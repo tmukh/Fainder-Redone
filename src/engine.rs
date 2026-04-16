@@ -58,6 +58,7 @@ pub fn execute_queries(
     index: &FainderIndex,
     raw_queries: Vec<(f32, String, f64)>,
     index_mode_str: &str,
+    num_threads: Option<usize>,
 ) -> PyResult<Vec<PyObject>> {
     let index_mode = IndexMode::from_str(index_mode_str)?;
 
@@ -85,9 +86,16 @@ pub fn execute_queries(
     // Safe to check first cluster?
     // Let's implement robustly.
 
-    let results: Vec<Vec<u32>> = typed_queries
-        .par_iter()
-        .map(|q| {
+    // 2. Build a Rayon thread pool with the requested number of threads.
+    // num_threads=None (or 0) → Rayon default (all available cores).
+    // num_threads=Some(1)     → serial execution (ablation: isolates parallelism contribution).
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(num_threads.unwrap_or(0))
+        .build()
+        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+
+    let results: Vec<Vec<u32>> = pool.install(|| {
+        typed_queries.par_iter().map(|q| {
             let mut matches: Vec<u32> = Vec::new();
 
             // Adjust percentile/logic based on comparison
@@ -232,8 +240,8 @@ pub fn execute_queries(
                 }
             }
             matches
-        })
-        .collect();
+        }).collect()
+    }); // end pool.install
 
     // 3. Convert to Python Sets (Sequential, GIL)
     let mut py_results: Vec<PyObject> = Vec::with_capacity(results.len());

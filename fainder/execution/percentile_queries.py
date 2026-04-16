@@ -660,11 +660,16 @@ def query_index(
             # Initialize Rust Index (flattens memory)
             rust_index = fainder_core.FainderIndex(rust_input_index, cluster_bins)
 
+            # FAINDER_NUM_THREADS=N limits Rayon to N threads (1 = serial, ablation study).
+            # Unset or 0 = Rayon default (all available cores).
+            _num_threads_env = os.environ.get("FAINDER_NUM_THREADS")
+            num_threads = int(_num_threads_env) if _num_threads_env else None
+
             start = time.perf_counter()
 
             # Run queries in parallel (Rust Rayon)
             # Returns list[set[int]] directly (optimized)
-            matches = rust_index.run_queries(queries, index_mode)
+            matches = rust_index.run_queries(queries, index_mode, num_threads)
 
             end = time.perf_counter()
             logger.debug(f"Rust index-based query execution time: {end - start:.6f}s")

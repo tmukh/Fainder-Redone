@@ -143,13 +143,15 @@ impl FainderIndex {
         })
     }
 
+    #[pyo3(signature = (queries, index_mode, num_threads=None))]
     pub fn run_queries<'py>(
         &self,
         py: Python<'py>,
         queries: Vec<(f32, String, f64)>,
         index_mode: &str,
+        num_threads: Option<usize>,
     ) -> PyResult<Vec<PyObject>> {
-        crate::engine::execute_queries(py, self, queries, index_mode)
+        crate::engine::execute_queries(py, self, queries, index_mode, num_threads)
     }
 }
 
