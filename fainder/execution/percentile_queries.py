@@ -655,7 +655,13 @@ def query_index(
             # pctl_index is list[tuple[tuple[FArray, UInt32Array], ...]]
             # Rust expects Vec<Vec<(FArray, UInt32Array)>>
             # We convert tuples to lists to ensure compatibility with Vec
-            rust_input_index = [list(cluster_variants) for cluster_variants in pctl_index]
+            rust_input_index = [
+                [
+                    (np.asarray(p, dtype=np.float32), np.asarray(i, dtype=np.uint32))
+                    for p, i in cluster_variants
+                ]
+                for cluster_variants in pctl_index
+            ]
 
             # Initialize Rust Index (flattens memory)
             rust_index = fainder_core.FainderIndex(rust_input_index, cluster_bins)
