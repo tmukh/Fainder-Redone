@@ -200,41 +200,55 @@ pub fn execute_queries(
                 if let Some(sub) = index.get_subindex(c, pctl_mode) {
                     let n_hists = index.get_cluster_size(c);
                     let idx_offset = bin_idx * n_hists;
-                    if idx_offset + n_hists > sub.values.len() {
-                        continue; // Should not happen with validation
+                    if idx_offset + n_hists > sub.len() {
+                        continue;
                     }
-
-                    let col_vals = &sub.values[idx_offset..idx_offset + n_hists];
-                    let col_ids = &sub.indices[idx_offset..idx_offset + n_hists];
-
-                    // Python: searchsorted on column
-                    // if "l": left search. matches [hist_index:]
-                    // if "g": right search. matches [:hist_index]
 
                     let target = eff_percentile;
 
-                    if !is_gt {
-                        // Less than: returns histograms with val >= target?
-                        // Matches logic: `matches.update(pctl_index...[hist_index:])`
-                        // So histograms starting from hist_index have pctl >= target.
-                        // We want "histogram's percentile value" to be compared with query percentile?
-                        // Logic in python: `hist_index = searchsorted(..., percentile, "left")`
-                        // `pctl_index` stores sorted percentiles.
-                        // We take everything FROM `hist_index` to END.
-                        // So we take values >= percentile.
+                    // ── HOT LOOP: layout-dependent binary search ──────────────
+                    //
+                    // SoA (default): binary search over a pure f32 slice.
+                    //   Each cache line holds 16 f32 values → prefetcher loads
+                    //   ahead predictively. extend_from_slice copies the u32
+                    //   ids in a separate sequential pass.
+                    //
+                    // AoS (--features aos): binary search over (f32, u32) pairs.
+                    //   Each cache line holds only 8 pairs (8 bytes each).
+                    //   The u32 index fields pollute cache lines during search,
+                    //   halving effective cache utilisation. This is the control
+                    //   condition that isolates the SoA layout contribution.
 
-                        let h_idx = col_vals.partition_point(|&x| x < target);
-                        if h_idx < n_hists {
-                            matches.extend_from_slice(&col_ids[h_idx..]);
+                    #[cfg(not(feature = "aos"))]
+                    {
+                        let col_vals = &sub.values[idx_offset..idx_offset + n_hists];
+                        let col_ids  = &sub.indices[idx_offset..idx_offset + n_hists];
+                        if !is_gt {
+                            let h_idx = col_vals.partition_point(|&x| x < target);
+                            if h_idx < n_hists {
+                                matches.extend_from_slice(&col_ids[h_idx..]);
+                            }
+                        } else {
+                            let h_idx = col_vals.partition_point(|&x| x <= target);
+                            if h_idx > 0 {
+                                matches.extend_from_slice(&col_ids[..h_idx]);
+                            }
                         }
-                    } else {
-                        // Greater than: `searchsorted(..., "right")`
-                        // matches `[:hist_index]`
-                        // So we take values <= percentile (which was 1-p).
+                    }
 
-                        let h_idx = col_vals.partition_point(|&x| x <= target);
-                        if h_idx > 0 {
-                            matches.extend_from_slice(&col_ids[..h_idx]);
+                    #[cfg(feature = "aos")]
+                    {
+                        let col = &sub.entries[idx_offset..idx_offset + n_hists];
+                        if !is_gt {
+                            let h_idx = col.partition_point(|e| e.0 < target);
+                            if h_idx < n_hists {
+                                matches.extend(col[h_idx..].iter().map(|e| e.1));
+                            }
+                        } else {
+                            let h_idx = col.partition_point(|e| e.0 <= target);
+                            if h_idx > 0 {
+                                matches.extend(col[..h_idx].iter().map(|e| e.1));
+                            }
                         }
                     }
                 }
