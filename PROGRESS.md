@@ -300,7 +300,30 @@ Running `FAINDER_NO_RUST=1 run-queries --suppress-results` (pure Python `query_l
 
 **Scientific interpretation**: The columnar cache reuse is real and significant — 2.49× at single-thread — but the gain is only available at low parallelism. The thesis recommendation is: use row-centric for production with many cores (better scaling), but the columnar measurement isolates the cache reuse contribution as a standalone optimization component.
 
-**Figure**: `analysis/figures/fig13_columnar_vs_row.pdf` (to be generated)
+#### eval_10gb (4,500 queries, 323k histograms, 57 clusters)
+
+| Threads | Row query(s) | Columnar par_phase(s) | Columnar total(s) | Row / Col ratio |
+|---------|--------------|-----------------------|-------------------|-----------------|
+| 1  | 3.74 | **1.67** | 1.75 | **2.13×** col wins |
+| 2  | 2.30 | **1.06** | 1.15 | **2.00×** col wins |
+| 4  | 1.33 | **0.78** | 0.87 | **1.53×** col wins |
+| 8  | **0.70** | 0.73 | 0.82 | 0.85× row wins |
+| 16 | **0.56** | 0.76 | 0.88 | 0.63× row wins |
+| 32 | **0.59** | 0.69 | 0.79 | 0.75× row wins |
+| 64 | **0.71** | 0.79 | 0.89 | 0.80× row wins |
+
+**Crossover at t≈6** (between t=4 and t=8) — much earlier than eval_medium's t≈20.
+
+#### Cross-dataset comparison: what determines the crossover point?
+
+| Dataset | Queries | Crossover | N_queries/N_threads at crossover |
+|---------|---------|-----------|----------------------------------|
+| eval_10gb | 4,500 | t≈6 | 4500/6 ≈ 750 |
+| eval_medium | 10,000 | t≈20 | 10000/20 = 500 |
+
+**The crossover scales with N_queries / N_threads** — consistent ~500–750 tasks/thread at crossover across both datasets. This is the mechanistic fingerprint: once row-centric has enough tasks per thread for Rayon work-stealing to fully utilize all cores, it beats columnar's cache reuse. Fewer queries → earlier crossover → narrower window where columnar wins.
+
+**Figure**: `analysis/figures/fig13_columnar_vs_row.pdf`
 
 ---
 

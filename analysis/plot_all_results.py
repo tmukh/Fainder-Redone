@@ -143,17 +143,28 @@ eytzinger_data = {
 }
 
 # Columnar engine ablation: row-centric (queries outer) vs columnar (clusters outer, queries grouped by bin).
-# Source: logs/ablation/eval_medium-{row,columnar}-tN.log (ablation_columnar.sh, Apr-22)
-# Row-centric:  par_iter(queries){ serial(clusters) }  — 10k Rayon tasks
+# Source: logs/ablation/eval_{medium,10gb}-{row,columnar}-tN.log (ablation_columnar.sh, Apr-22)
+# Row-centric:  par_iter(queries){ serial(clusters) }  — N_queries Rayon tasks
 # Columnar:     par_iter(clusters){ grouped queries }  — 57 Rayon tasks; cache reuse per column
-# "par_phase" = columnar parallel phase only (binary search + flat-buffer writes, before scatter-merge).
-# TIMER output (eprintln!) captured via 2>&1 in the wrapper log.
+# "col_phase" = columnar parallel_phase only (binary search + flat-buffer writes, before scatter-merge).
 columnar_data = {
     "eval_medium": {
+        # 10,000 queries, ~1M hists, 57 clusters — crossover at t≈20
         "threads":    [1,     2,     4,    8,    16,   32,   64],
         "row":        [24.49, 13.20, 7.28, 5.04, 3.58, 3.06, 3.97],
-        "col_phase":  [9.82,  6.44,  4.19, 3.74, 3.25, 3.26, 3.36],  # parallel_phase only
-        "col_total":  [10.47, 7.14,  4.67, 4.25, 3.78, 3.83, 3.94],  # full run_queries (incl. route+pyo3)
+        "col_phase":  [9.82,  6.44,  4.19, 3.74, 3.25, 3.26, 3.36],
+        "col_total":  [10.47, 7.14,  4.67, 4.25, 3.78, 3.83, 3.94],
+        "n_queries":  10000,
+        "crossover":  20,
+    },
+    "eval_10gb": {
+        # 4,500 queries, 323k hists, 57 clusters — crossover at t≈6
+        "threads":    [1,    2,    4,    8,    16,   32,   64],
+        "row":        [3.74, 2.30, 1.33, 0.70, 0.56, 0.59, 0.71],
+        "col_phase":  [1.67, 1.06, 0.78, 0.73, 0.76, 0.69, 0.79],
+        "col_total":  [1.75, 1.15, 0.87, 0.82, 0.88, 0.79, 0.89],
+        "n_queries":  4500,
+        "crossover":  6,
     },
 }
 
@@ -597,68 +608,71 @@ def fig11_eytzinger():
 # FIG 13 — Columnar vs Row-Centric engine
 # ═══════════════════════════════════════════════════════════════════════════════
 def fig13_columnar():
-    d = columnar_data["eval_medium"]
-    threads   = d["threads"]
-    row       = d["row"]
-    col_phase = d["col_phase"]
-    col_total = d["col_total"]
-    x = list(range(len(threads)))
+    COLUMNAR_COL = "#4dac26"
+    ROW_COL      = RUST_COL
 
-    COLUMNAR_COL = "#4dac26"   # green for columnar
-    ROW_COL      = RUST_COL    # blue for row-centric
+    datasets = [
+        ("eval_medium", "eval\\_medium (10k queries, ~1M hists)", 4, 5),  # crossover between idx 4-5
+        ("eval_10gb",   "eval\\_10gb (4.5k queries, 323k hists)", 2, 3),   # crossover between idx 2-3
+    ]
 
-    fig, axes = plt.subplots(1, 2, figsize=(12, 4.5))
+    fig, axes = plt.subplots(2, 2, figsize=(12, 9))
 
-    # ── Left: absolute times ──────────────────────────────────────────────────
-    ax = axes[0]
-    ax.plot(x, row,       "o-",  color=ROW_COL,      lw=2, ms=6, label="Row-centric (query time)")
-    ax.plot(x, col_phase, "s--", color=COLUMNAR_COL, lw=2, ms=6, label="Columnar (parallel phase only)")
-    ax.plot(x, col_total, "s:",  color=COLUMNAR_COL, lw=1.5, ms=5, alpha=0.6, label="Columnar (total run_queries)")
-    ax.set_xticks(x)
-    ax.set_xticklabels([f"t={t}" for t in threads])
-    ax.set_xlabel("Thread count")
-    ax.set_ylabel("Time (s)")
-    ax.set_title("Absolute query time — eval_medium (10k queries, ~1M hists)")
-    ax.legend(loc="upper right")
-    ax.set_ylim(bottom=0)
+    for row_idx, (ds, title, cx_lo, cx_hi) in enumerate(datasets):
+        d = columnar_data[ds]
+        threads   = d["threads"]
+        row_t     = d["row"]
+        col_phase = d["col_phase"]
+        col_total = d["col_total"]
+        x = list(range(len(threads)))
+        crossover = d["crossover"]
 
-    # annotate crossover region
-    ax.axvspan(x[4], x[5], alpha=0.08, color="gray", label="_crossover zone")
-    ax.text((x[4]+x[5])/2, max(row)*0.65, "crossover\n(t≈20)", ha="center",
-            fontsize=8, color="gray")
+        # ── Left: absolute times ─────────────────────────────────────────────
+        ax = axes[row_idx][0]
+        ax.plot(x, row_t,     "o-",  color=ROW_COL,      lw=2, ms=6, label="Row-centric")
+        ax.plot(x, col_phase, "s--", color=COLUMNAR_COL, lw=2, ms=6, label="Columnar (par phase)")
+        ax.plot(x, col_total, "s:",  color=COLUMNAR_COL, lw=1.5, ms=4, alpha=0.5,
+                label="Columnar (total)")
+        ax.set_xticks(x)
+        ax.set_xticklabels([f"t={t}" for t in threads])
+        ax.set_xlabel("Thread count")
+        ax.set_ylabel("Time (s)")
+        ax.set_title(f"Absolute time — {title}")
+        ax.legend(fontsize=8)
+        ax.set_ylim(bottom=0)
+        ax.axvspan(cx_lo, cx_hi, alpha=0.08, color="gray")
+        ax.text((cx_lo+cx_hi)/2, max(row_t)*0.6,
+                f"crossover\n(t≈{crossover})", ha="center", fontsize=8, color="gray")
 
-    # ── Right: speedup of columnar over row ───────────────────────────────────
-    ax = axes[1]
-    ratio_phase = [r/c for r, c in zip(row, col_phase)]
-    ratio_total = [r/c for r, c in zip(row, col_total)]
-    ax.plot(x, ratio_phase, "s--", color=COLUMNAR_COL, lw=2, ms=6,
-            label="Row / Columnar parallel_phase")
-    ax.plot(x, ratio_total, "s:",  color=COLUMNAR_COL, lw=1.5, ms=5, alpha=0.6,
-            label="Row / Columnar total")
-    ax.axhline(1.0, color="black", lw=0.8, ls="--", alpha=0.5)
-    ax.fill_between(x, ratio_phase, 1.0,
-                    where=[r > 1 for r in ratio_phase],
-                    alpha=0.12, color=COLUMNAR_COL, label="Columnar wins")
-    ax.fill_between(x, ratio_phase, 1.0,
-                    where=[r < 1 for r in ratio_phase],
-                    alpha=0.12, color=ROW_COL, label="Row wins")
-    ax.set_xticks(x)
-    ax.set_xticklabels([f"t={t}" for t in threads])
-    ax.set_xlabel("Thread count")
-    ax.set_ylabel("Speedup (row / columnar)")
-    ax.set_title("Relative speedup: columnar vs row-centric")
-    ax.legend(loc="lower left")
+        # ── Right: speedup ratio ─────────────────────────────────────────────
+        ax = axes[row_idx][1]
+        ratio = [r/c for r, c in zip(row_t, col_phase)]
+        ax.plot(x, ratio, "s--", color=COLUMNAR_COL, lw=2, ms=6, label="Row / Columnar phase")
+        ax.axhline(1.0, color="black", lw=0.8, ls="--", alpha=0.5)
+        ax.fill_between(x, ratio, 1.0,
+                        where=[r > 1 for r in ratio], alpha=0.12, color=COLUMNAR_COL,
+                        label="Columnar wins")
+        ax.fill_between(x, ratio, 1.0,
+                        where=[r < 1 for r in ratio], alpha=0.12, color=ROW_COL,
+                        label="Row wins")
+        ax.set_xticks(x)
+        ax.set_xticklabels([f"t={t}" for t in threads])
+        ax.set_xlabel("Thread count")
+        ax.set_ylabel("Speedup (row / columnar)")
+        ax.set_title(f"Relative speedup — {title}")
+        ax.legend(fontsize=8, loc="lower left")
 
-    # annotate peak
-    peak_idx = int(np.argmax(ratio_phase))
-    ax.annotate(f"{ratio_phase[peak_idx]:.2f}×\ncache reuse",
-                xy=(x[peak_idx], ratio_phase[peak_idx]),
-                xytext=(x[peak_idx]+0.4, ratio_phase[peak_idx]+0.05),
-                fontsize=8, arrowprops=dict(arrowstyle="->", lw=0.8))
+        peak_idx = int(np.argmax(ratio))
+        ax.annotate(f"{ratio[peak_idx]:.2f}×",
+                    xy=(x[peak_idx], ratio[peak_idx]),
+                    xytext=(x[peak_idx]+0.3, ratio[peak_idx]+0.05),
+                    fontsize=9, arrowprops=dict(arrowstyle="->", lw=0.8))
 
-    fig.suptitle("Column-centric engine: cache reuse benefit vs task granularity penalty\n"
-                 "57 cluster tasks (columnar) vs 10k query tasks (row-centric)",
-                 fontsize=11, y=1.03)
+    fig.suptitle(
+        "Column-centric engine: cache reuse benefit vs task granularity penalty\n"
+        "Columnar = 57 cluster tasks; Row-centric = N\\_queries tasks\n"
+        "Crossover scales with N\\_queries / N\\_threads: eval\\_medium (t≈20) vs eval\\_10gb (t≈6)",
+        fontsize=10, y=1.02)
     fig.tight_layout()
     save(fig, "fig13_columnar_vs_row")
 
