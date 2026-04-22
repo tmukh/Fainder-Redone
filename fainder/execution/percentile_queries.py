@@ -671,15 +671,28 @@ def query_index(
             _num_threads_env = os.environ.get("FAINDER_NUM_THREADS")
             num_threads = int(_num_threads_env) if _num_threads_env else None
 
+            # FAINDER_COLUMNAR=1 enables the column-centric engine (cluster-outer loop)
+            # which reuses column data across queries for improved cache efficiency.
+            columnar = os.environ.get("FAINDER_COLUMNAR", "0") == "1"
+
             start = time.perf_counter()
 
-            # Run queries in parallel (Rust Rayon)
-            # Returns list[set[int]] directly (optimized)
-            matches = rust_index.run_queries(queries, index_mode, num_threads)
+            # Run queries in parallel (Rust Rayon).
+            # Returns list[np.ndarray[uint32]] — one array per query.
+            # When suppress_results=True, Rust skips the scatter-merge (saves ~19s on eval_medium)
+            # and returns empty arrays, matching what Python would discard anyway.
+            raw_matches = rust_index.run_queries(
+                queries, index_mode, num_threads, columnar, suppress_results
+            )
 
             end = time.perf_counter()
             logger.debug(f"Rust index-based query execution time: {end - start:.6f}s")
             logger.trace(f"query_collection_time, {end - start}")
+
+            if suppress_results:
+                matches = [set() for _ in raw_matches]
+            else:
+                matches = [set(arr.tolist()) for arr in raw_matches]
 
             return matches
 

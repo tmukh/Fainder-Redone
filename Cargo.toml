@@ -10,8 +10,11 @@ crate-type = ["cdylib"]
 [features]
 # Default: Structure-of-Arrays layout (cache-efficient binary search over values[])
 # Enable "aos" to switch to Array-of-Structs for ablation comparison:
-#   maturin develop --release -- --features aos
+#   maturin develop --release --features aos
 aos = []
+cluster-par = []        # Nested cluster-level parallelism (queries × clusters work units)
+f16 = ["dep:half"]      # Store percentile values as f16 — halves index memory footprint
+eytzinger = []          # BFS-order values for prefetch-friendly binary search
 
 [dependencies]
 pyo3 = { version = "0.22.0", features = ["extension-module", "abi3-py310"] }
@@ -20,3 +23,4 @@ rayon = "1.10.0"
 thiserror = "1.0"
 log = "0.4"
 env_logger = "0.11"
+half = { version = "2.4", optional = true }

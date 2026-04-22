@@ -4,6 +4,7 @@ Generates figures for hardware-level ablation experiments:
   fig6_tmpfs_vs_disk.pdf/png      — tmpfs vs disk (proves DRAM-bound, not I/O)
   fig7_soa_vs_aos.pdf/png         — SoA vs AoS across datasets and modes
   fig8_all_curves.pdf/png         — combined: disk / tmpfs / numa on one axes
+  fig10_roofline_perf.pdf/png     — perf stat: IPC + LLC misses at t=1 vs t=64
 """
 
 import matplotlib
@@ -206,10 +207,67 @@ def fig8_all_curves():
     save(fig, "fig8_hardware_ablation_summary")
 
 
+# ── Fig 10: Roofline / perf stat ─────────────────────────────────────────────
+def fig10_roofline():
+    # perf stat data: eval_medium, 10k queries, rebinning index
+    configs   = ["t=1\n(serial)", "t=64\n(parallel)"]
+    ipc       = [0.94, 0.96]
+    llc_miss  = [2703.5, 1974.3]   # millions
+    wall_time = [952.3, 758.9]     # seconds
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4.2))
+
+    # ── Left: IPC ────────────────────────────────────────────────────────────
+    bars = ax1.bar(configs, ipc, color=[BLUE, GREEN], alpha=0.85, width=0.4)
+    for bar, v in zip(bars, ipc):
+        ax1.text(bar.get_x() + bar.get_width()/2, v + 0.01, f"{v:.2f}",
+                 ha="center", va="bottom", fontsize=10, fontweight="bold")
+
+    # Reference lines for context
+    ax1.axhline(1.0, color="gray", lw=1.0, linestyle="--", alpha=0.6, label="IPC = 1.0 (memory-stalled)")
+    ax1.axhline(2.0, color=RED,   lw=1.0, linestyle=":",  alpha=0.5, label="IPC = 2.0 (compute-bound ref)")
+    ax1.set_ylim(0, 2.5)
+    ax1.set_ylabel("Instructions per Cycle (IPC)")
+    ax1.set_title("IPC — memory-stalled regardless\nof thread count")
+    ax1.legend(fontsize=8)
+    ax1.grid(True, axis="y", alpha=0.3, linestyle="--")
+    ax1.grid(False, axis="x")
+    ax1.spines["top"].set_visible(False)
+    ax1.spines["right"].set_visible(False)
+    ax1.annotate("CPU stalls waiting\nfor DRAM on every\nbinary search step",
+                 xy=(0, ipc[0]), xytext=(0.55, 1.6),
+                 fontsize=8, color="gray",
+                 arrowprops=dict(arrowstyle="->", color="gray", lw=0.9))
+
+    # ── Right: LLC misses ─────────────────────────────────────────────────────
+    bars2 = ax2.bar(configs, llc_miss, color=[BLUE, GREEN], alpha=0.85, width=0.4)
+    for bar, v in zip(bars2, llc_miss):
+        ax2.text(bar.get_x() + bar.get_width()/2, v + 20, f"{v/1000:.2f}B",
+                 ha="center", va="bottom", fontsize=10, fontweight="bold")
+
+    ax2.set_ylabel("LLC load misses (millions) → DRAM accesses")
+    ax2.set_title("LLC misses — 270k DRAM accesses\nper query at t=1")
+    ax2.grid(True, axis="y", alpha=0.3, linestyle="--")
+    ax2.grid(False, axis="x")
+    ax2.spines["top"].set_visible(False)
+    ax2.spines["right"].set_visible(False)
+    ax2.annotate("Misses decrease slightly\nwith 64 threads (cache\nsharing), but wall time\nbarely improves (1.25×)",
+                 xy=(1, llc_miss[1]), xytext=(0.0, llc_miss[1] - 600),
+                 fontsize=8, color="gray",
+                 arrowprops=dict(arrowstyle="->", color="gray", lw=0.9))
+
+    fig.suptitle("Hardware performance counters — eval\\_medium (10k queries, perf stat)\n"
+                 "IPC ≈ 0.95 at all thread counts: CPU is memory-latency-bound, not compute-bound",
+                 fontsize=11, y=1.02)
+    fig.tight_layout()
+    save(fig, "fig10_roofline_perf")
+
+
 if __name__ == "__main__":
     print("Generating hardware ablation figures...")
     fig5_numa()
     fig6_tmpfs()
     fig7_soa_aos()
     fig8_all_curves()
+    fig10_roofline()
     print(f"\nAll figures → {OUT.resolve()}")

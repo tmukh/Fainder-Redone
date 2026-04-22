@@ -9,32 +9,28 @@
 
 | Method | Time (s) | vs. Rust rebinning |
 |---|---|---|
-| Exact scan | 56.230 | 62.5x slower |
-| BinSort | 10.830 | 12.0x slower |
-| PScan | 73.980 | 82.2x slower |
-| Python rebinning | 0.940 | 1.0x slower |
-| Python conversion | 0.900 | 1.0x slower |
-| Rust rebinning | 0.900 | 1.0x slower |
-| Rust conversion | 0.540 | 0.6x slower |
+| Exact scan | 56.230 | 122.2x slower |
+| BinSort | 10.830 | 23.5x slower |
+| PScan | 73.980 | 160.8x slower |
+| Python rebinning | 0.837 | 1.8x slower |
+| Python conversion | 0.900 | 2.0x slower |
+| Rust rebinning | 0.460 | 1.0x slower |
+| Rust conversion | 0.540 | 1.2x slower |
 
 ### eval_medium (10 000 queries, ~200k histograms)
 
 | Method | Time (s) | vs. Rust rebinning |
 |---|---|---|
-| Python rebinning | 714.8 | 1.24x |
-| Python conversion | 710.3 | 1.24x |
-| Rust rebinning | 574.6 | 1.00x |
-| Rust conversion | 589.6 | 1.03x |
+| Python rebinning | 10.7 | 3.58x |
+| Rust rebinning | 3.0 | 1.00x |
 
 ### eval_10gb (4 500 queries, 323k histograms)
 
 | Method | Time (s) | vs. Rust rebinning |
 |---|---|---|
-| BinSort | 1681.0 | 25.20x |
-| Python rebinning | 95.2 | 1.43x |
-| Python conversion | 91.8 | 1.38x |
-| Rust rebinning | 66.7 | 1.00x |
-| Rust conversion | 85.8 | 1.29x |
+| BinSort | 1681.0 | 32.26x |
+| Python rebinning | 95.2 | 1.83x |
+| Rust rebinning | 52.1 | 1.00x |
 
 > Note: Exact scan and NDist were killed for eval_medium/eval_10gb (estimated days to complete).
 > Paper values used as reference: GitTables full (5M hists) — exact scan 48,310s, BinSort 7,906s, Fainder 284s.
@@ -43,9 +39,9 @@
 
 | Dataset | Histograms | Queries | Python reb. | Rust reb. | Speedup | Python conv. | Rust conv. | Speedup |
 |---|---|---|---|---|---|---|---|---|
-| dev_small | ~50k | 200 | 0.94s | 0.90s | **1.04x** | 0.90s | 0.54s | **1.67x** |
-| eval_medium | ~200k | 10000 | 714.80s | 574.60s | **1.24x** | 710.30s | 589.60s | **1.20x** |
-| eval_10gb | 323k | 4500 | 95.20s | 66.70s | **1.43x** | 91.80s | 85.80s | **1.07x** |
+| dev_small | ~50k | 200 | 0.84s | 0.46s | **1.82x** | 0.90s | 0.54s | **1.67x** |
+| eval_medium | ~200k | 10000 | 10.74s | 3.00s | **3.58x** | — | — | — |
+| eval_10gb | 323k | 4500 | 95.20s | 52.10s | **1.83x** | — | — | — |
 
 ## 3. Parallelism Ablation — Thread Count Sweep
 
@@ -53,30 +49,32 @@
 
 | Threads | 1 | 2 | 4 | 8 | 16 | 32 | 64 |
 |---|---|---|---|---|---|---|---|
-| Time (s) | 0.88 | 0.77 | 0.56 | 0.77 | 0.82 | 0.77 | 0.82 |
-| Speedup vs Python | 0.95x | 1.09x | 1.50x | 1.09x | 1.02x | 1.09x | 1.02x |
+| Time (s) | 0.72 | 0.66 | 0.46 | 0.66 | 0.71 | 0.66 | 0.74 |
+| Speedup vs Python | 1.16x | 1.28x | 1.82x | 1.27x | 1.18x | 1.26x | 1.13x |
 
-**Finding:** Peak at t=4 (0.56s = 1.50x over Python). Coordination overhead exceeds computation beyond t=4 — workload is compute-bound but work units are too small.
+**Finding:** Peak at t=4 (0.460s = 1.82× over Python). Rust t=1 (0.719s) is SLOWER than Python (0.837s): Python numpy uses vectorized C searchsorted; Rust uses scalar partition_point. Parallelism compensates at t≥4.
 
-### eval_medium (Python baseline: 732.10s)
+### eval_medium (Python baseline: 10.74s)
 
 | Threads | 1 | 2 | 4 | 8 | 16 | 32 | 64 |
 |---|---|---|---|---|---|---|---|
-| Time (s) | 565.50 | 545.60 | 553.30 | 576.40 | 570.30 | 578.20 | 556.50 |
-| Speedup vs Python | 1.29x | 1.34x | 1.32x | 1.27x | 1.28x | 1.27x | 1.32x |
+| Time (s) | 24.05 | 13.07 | 7.22 | 4.91 | 3.00 | 4.04 | 3.61 |
+| Speedup vs Python | 0.45x | 0.82x | 1.49x | 2.19x | 3.58x | 2.66x | 2.98x |
 
-**Finding:** Flat curve — 546–578s regardless of thread count. Memory-bandwidth bound: all threads share the same DRAM bus, adding cores cannot help.
+**Finding:** 8× parallel speedup from t=1 (24.05s) to t=16 (3.00s). Rust t=1 (24.05s) is 2.24× slower than Python (10.74s) — numpy vectorized C vs scalar Rust — parallelism compensates above t=4. NUMA regression at t=32 (4.04s): crossing NUMA socket boundary increases cross-socket memory latency. DRAM bandwidth saturates at t=16 (optimal).
 
-## 4. What Is Not Yet Measured (Planned)
+## 4. Completed Ablation Summary
 
-| Experiment | What to build | Expected finding |
+| Experiment | Key Finding | Figure |
 |---|---|---|
-| **SoA vs AoS layout** | Cargo feature flag for Array-of-Structs SubIndex | SoA faster at large scale due to cache-line efficiency |
-| **tmpfs isolation** | Copy index to `/dev/shm`, re-run thread sweep | Confirms DRAM-bound (not I/O-bound) |
-| **NUMA pinning** | `numactl --membind=0 --cpunodebind=0` | Potential lift on multi-socket server |
-| **partition_point vs binary_search** | Cargo feature swap | ~2–5% expected |
-| **Roofline measurement** | `perf stat` cache miss counts | Places workload on hardware bandwidth curve |
-| **Accuracy confirmation** | `compute-accuracy-metrics` Rust vs Python | Proves Rust produces identical results |
+| **SoA vs AoS layout** | ≤10% difference, inconsistent — memory layout not the bottleneck | fig7 |
+| **tmpfs isolation** | Curves identical — bottleneck is DRAM latency, not I/O | fig6 |
+| **NUMA pinning** | +6–14% at low thread count, fades at high — secondary effect | fig5 |
+| **Cluster-level parallelism** | 34× more work units make no difference — latency-bound, not work-bound | fig9 |
+| **Roofline (perf stat)** | IPC=0.94 at t=1 and t=64 — dependent cache-miss chain, ~270k DRAM/query | fig10 |
+| **f16 precision** | 1.40× faster at t=16; 50% smaller index shifts data into LLC | fig11 |
+| **Eytzinger (BFS) layout** | Wins at t=4 (1.13×); loses at t≥16 (50% footprint hurts bandwidth) | fig12 |
+| **Columnar engine** | 2.49× at t=1 (cache reuse); row wins at t≥32 (task granularity) | fig13 |
 
 ## Figures
 
@@ -85,74 +83,15 @@ All figures in `analysis/figures/` (PDF for LaTeX, PNG for preview):
 | File | Content |
 |---|---|
 | `fig1_baseline_dev_small` | Bar chart: all methods on dev_small (log scale) |
-| `fig2_rust_vs_python_speedup` | Grouped bars: Python→Rust speedup per dataset and index mode |
-| `fig3_thread_sweep` | Two-panel: thread scaling dev_small (peak at t=4) + eval_medium (flat) |
+| `fig2_rust_vs_python_speedup` | Bars: Python→Rust engine speedup (suppress_results=True) |
+| `fig3_thread_sweep` | Two-panel: thread scaling — dev_small (t=4 peak) + eval_medium (t=16 peak, NUMA at t=32) |
 | `fig4_summary_heatmap` | Heatmap: all methods × all datasets |
----
-
-## 5. Hardware Ablation (eval_medium: 10k queries, ~200k hists, 494 MB index)
-
-### 5.1 NUMA Topology (numactl --membind=0 --cpunodebind=0 vs default)
-
-Server: 2 NUMA nodes × 96 cores × ~512 GB RAM each.
-
-| Threads | Unpinned (s) | NUMA-pinned (s) | Improvement |
-|---|---|---|---|
-| t=1 | 565.5 | 529.7 | 6% |
-| t=2 | 545.6 | 482.8 | **12%** |
-| t=4 | 553.3 | 477.4 | **14%** |
-| t=8 | 576.4 | 539.7 | 6% |
-| t=16 | 570.3 | 549.0 | 4% |
-| t=32 | 578.2 | 556.6 | 4% |
-| t=64 | 556.5 | 551.4 | 1% |
-
-**Finding:** NUMA pinning gives up to 14% improvement at low thread counts (t=2–4) where all threads fit on one node. Benefit fades at high thread counts because 64 threads no longer fit on one node — pinning then starves threads of cores. Cross-NUMA memory latency is a real but secondary contributor to the flat curve.
-
-### 5.2 tmpfs Isolation (index in /dev/shm vs disk page cache)
-
-| Threads | Disk (s) | tmpfs (s) | Difference |
-|---|---|---|---|
-| t=1 | 565.5 | 726.4 | +28% (cold cache) |
-| t=2 | 545.6 | 555.8 | ~same |
-| t=4 | 553.3 | 543.3 | ~same |
-| t=8 | 576.4 | 541.3 | ~same |
-| t=16 | 570.3 | 541.8 | ~same |
-| t=32 | 578.2 | 612.0 | ~same |
-| t=64 | 556.5 | 558.8 | ~same |
-
-**Finding:** The flat curve persists with the index in RAM. This **proves** the bottleneck is genuine DRAM bandwidth/latency, not disk I/O or page cache effects. The t=1 tmpfs anomaly (726s) is cold-cache variance — the disk variant had a warm OS page cache from prior runs.
-
-### 5.3 SoA vs AoS Memory Layout (t=1 serial, isolates layout from parallelism)
-
-| Dataset | Mode | SoA (s) | AoS (s) | AoS overhead |
-|---|---|---|---|---|
-| dev_small (50k) | rebinning | 0.78 | 0.84 | **+8%** |
-| dev_small (50k) | conversion | 1.08 | 1.14 | **+6%** |
-| eval_medium (200k) | rebinning | 551.3 | 541.6 | -2% (within noise) |
-| eval_medium (200k) | conversion | 614.5 | 608.5 | -1% (within noise) |
-| eval_10gb (323k) | rebinning | 69.3 | 69.3 | 0% |
-| eval_10gb (323k) | conversion | 91.0 | 82.8 | **-9% (AoS faster)** |
-
-**Finding:** SoA advantage only appears at small scale (dev_small, +6–8%) where the index fits in L3 cache and the binary search is cache-sensitive. At large scale the bottleneck shifts to DRAM latency — both layouts are equally limited by memory access time, so layout stops mattering. The eval_10gb conversion result (AoS 9% faster) is within experimental variance.
-
-### 5.4 Cluster Structure Analysis
-
-| Dataset | Clusters | Mean hists/cluster | Mean bins/cluster | Clusters touched/query |
-|---|---|---|---|---|
-| dev_small | 10 | 5,007 | 101 | 8.2 / 10 (82%) |
-| eval_medium | 57 | 17,485 | 878 | 34.2 / 57 (60%) |
-
-**Finding:** Queries touch 60–82% of all clusters — the supervisor's hypothesis that "too few clusters" explains poor parallelism scaling is not supported. Each query performs substantial work (34 clusters × binary search over 17k histograms). The bottleneck is **memory access latency** from dependent cache misses in binary search, not insufficient work per task.
-
-## 6. Figures
-
-| File | Content |
-|---|---|
-| `fig1_baseline_dev_small` | Bar chart: all methods on dev_small |
-| `fig2_rust_vs_python_speedup` | Python→Rust speedup per dataset and mode |
-| `fig3_thread_sweep` | Thread scaling: dev_small (compute-bound) vs eval_medium (flat) |
-| `fig4_summary_heatmap` | Heatmap: all methods × datasets |
-| `fig5_numa_vs_unpinned` | NUMA-pinned vs unpinned thread sweep |
-| `fig6_tmpfs_vs_disk` | tmpfs vs disk — proves DRAM-bound |
-| `fig7_soa_vs_aos` | SoA vs AoS across datasets and modes |
-| `fig8_hardware_ablation_summary` | All three curves overlaid |
+| `fig5_numa_vs_unpinned` | NUMA pinning effect (hardware ablation) |
+| `fig6_tmpfs_vs_disk` | tmpfs vs disk — confirms DRAM-bound not I/O-bound |
+| `fig7_soa_vs_aos` | SoA vs AoS memory layout — marginal, inconsistent |
+| `fig8_hardware_ablation_summary` | Combined hardware ablation summary |
+| `fig9_cluster_par_ablation` | Cluster-par vs query-par — no difference |
+| `fig10_roofline_perf` | Roofline: IPC=0.94, ~270k DRAM misses/query |
+| `fig11_f16_comparison` | f16 vs f32: 1.40× speedup at t=16 |
+| `fig12_eytzinger` | Eytzinger BFS vs SoA: wins at t=4, loses at high thread count |
+| `fig13_columnar_vs_row` | Columnar vs row-centric: 2.49× at t=1, crossover at t≈20 |

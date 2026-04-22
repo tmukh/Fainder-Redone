@@ -50,7 +50,8 @@ for n_threads in "${THREAD_COUNTS[@]}"; do
         -t index \
         -q "$QUERIES" \
         -m recall \
-        --log-level INFO \
+        --suppress-results \
+        --log-level DEBUG \
         --log-file "$LOG_DIR/$DATASET-rust-t$n_threads.log" \
         || echo "[$DATASET] t=$n_threads FAILED"
     echo "  → logged to $LOG_DIR/$DATASET-rust-t$n_threads.log"
@@ -63,7 +64,8 @@ FAINDER_NO_RUST=1 run-queries \
     -t index \
     -q "$QUERIES" \
     -m recall \
-    --log-level INFO \
+    --suppress-results \
+    --log-level DEBUG \
     --log-file "$LOG_DIR/$DATASET-python-baseline.log" \
     || echo "[$DATASET] Python baseline FAILED"
 
@@ -81,13 +83,15 @@ printf "%-20s %s\n" "------" "--------"
 for n_threads in "${THREAD_COUNTS[@]}"; do
     log="$LOG_DIR/$DATASET-rust-t$n_threads.log"
     if [[ -f "$log" ]]; then
-        t=$(grep "Raw index-based query execution time" "$log" | tail -1 | grep -oP '[0-9]+\.[0-9]+')
-        printf "%-20s %s\n" "Rust (t=$n_threads)" "${t:-N/A}"
+        total=$(grep "Ran.*queries in" "$log" | tail -1 | grep -oP '[0-9]+\.[0-9]+(?=s)')
+        query=$(grep "Rust index-based query execution time" "$log" | tail -1 | grep -oP '[0-9]+\.[0-9]+')
+        printf "%-20s total=%-10s run_queries=%s\n" "Rust (t=$n_threads)" "${total:-N/A}s" "${query:-N/A}s"
     fi
 done
 
 log="$LOG_DIR/$DATASET-python-baseline.log"
 if [[ -f "$log" ]]; then
-    t=$(grep "Raw index-based query execution time" "$log" | tail -1 | grep -oP '[0-9]+\.[0-9]+')
-    printf "%-20s %s\n" "Python (baseline)" "${t:-N/A}"
+    total=$(grep "Ran.*queries in" "$log" | tail -1 | grep -oP '[0-9]+\.[0-9]+(?=s)')
+    query=$(grep "Raw index-based query execution time" "$log" | tail -1 | grep -oP '[0-9]+\.[0-9]+')
+    printf "%-20s total=%-10s raw_query=%s\n" "Python (baseline)" "${total:-N/A}s" "${query:-N/A}s"
 fi
