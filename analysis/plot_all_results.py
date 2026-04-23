@@ -142,6 +142,27 @@ eytzinger_data = {
     },
 }
 
+# SIMD ablation: scalar partition_point vs AVX2-vectorized binary search.
+# Source: logs/ablation/{dataset}-{scalar,simd}-tN.log (ablation_simd.sh, Apr-23)
+# Both variants use FAINDER_COLUMNAR=1 + suppress_results=True → measures pure binary-search time.
+# Metric: "Rust index-based query execution time" (Python DEBUG logger).
+# Hypothesis: SIMD helps at low t (latency-bound, column in cache); no benefit at high t (bandwidth-bound).
+simd_data = {
+    "dev_small": {
+        "threads": [1,        2,        4,        8,        16,       32,       64],
+        "scalar":  [0.034344, 0.023252, 0.017182, 0.019865, 0.020414, 0.022151, 0.023345],
+        "simd":    [0.034049, 0.022754, 0.018929, 0.018359, 0.019373, 0.021193, 0.023888],
+    },
+    "eval_medium": {
+        # Source: logs/ablation/eval_medium-{scalar,simd}-tN.log (Apr-23)
+        # Metric: "Rust index-based query execution time" (Python DEBUG logger)
+        # Engine: FAINDER_COLUMNAR=1, suppress_results=True
+        "threads": [1,        2,        4,        8,        16,       32,       64],
+        "scalar":  [9.806359, 7.722357, 4.66789,  4.137854, 3.6232,   3.926618, 3.980878],
+        "simd":    [9.406,    6.811,    5.162,    3.944,    3.791,    3.865,    3.629],
+    },
+}
+
 # Columnar engine ablation: row-centric (queries outer) vs columnar (clusters outer, queries grouped by bin).
 # Source: logs/ablation/eval_{medium,10gb}-{row,columnar}-tN.log (ablation_columnar.sh, Apr-22)
 # Row-centric:  par_iter(queries){ serial(clusters) }  — N_queries Rayon tasks
@@ -678,6 +699,514 @@ def fig13_columnar():
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# FIG 14 — AVX2 SIMD vs scalar binary search ablation
+# ═══════════════════════════════════════════════════════════════════════════════
+def fig14_simd():
+    SIMD_COL   = "#8B008B"   # purple
+    SCALAR_COL = RUST_COL    # same blue as Rust baseline
+
+    has_medium = any(v is not None for v in simd_data["eval_medium"]["simd"])
+    datasets_to_plot = ["dev_small"]
+    if has_medium:
+        datasets_to_plot.append("eval_medium")
+
+    ncols = len(datasets_to_plot)
+    fig, axes = plt.subplots(1, ncols, figsize=(5.5 * ncols + 0.5, 4.5))
+    if ncols == 1:
+        axes = [axes]
+
+    ds_meta = {
+        "dev_small":   "dev\\_small (200q, 50k hists)",
+        "eval_medium": "eval\\_medium (10kq, 200k hists)",
+    }
+
+    for ax, ds in zip(axes, datasets_to_plot):
+        d = simd_data[ds]
+        threads  = d["threads"]
+        scalar_t = d["scalar"]
+        simd_t   = [v for v in d["simd"]]
+
+        # Filter to measured points only
+        valid_idx = [i for i, v in enumerate(simd_t) if v is not None]
+        if not valid_idx:
+            ax.text(0.5, 0.5, "SIMD results pending", ha="center", va="center",
+                    transform=ax.transAxes, fontsize=12, color="gray")
+            ax.set_title(f"{ds_meta[ds]}\nSIMD ablation (pending)")
+            continue
+
+        t_valid       = [threads[i]  for i in valid_idx]
+        scalar_valid  = [scalar_t[i] for i in valid_idx]
+        simd_valid    = [simd_t[i]   for i in valid_idx]
+        speedup_valid = [s / m for s, m in zip(scalar_valid, simd_valid)]
+
+        ax2 = ax.twinx()
+
+        l1, = ax.plot(range(len(threads)), scalar_t, "o-", color=SCALAR_COL,
+                      lw=1.8, ms=6, label="Scalar (partition\\_point)")
+        l2, = ax.plot([threads.index(t) for t in t_valid], simd_valid,
+                      "s-", color=SIMD_COL, lw=1.8, ms=6, label="SIMD (AVX2)")
+        l3, = ax2.plot([threads.index(t) for t in t_valid], speedup_valid,
+                       "D--", color=GREEN, lw=1.3, ms=5, alpha=0.8,
+                       label="Speedup ratio (scalar/SIMD)")
+
+        ax2.axhline(1.0, color="gray", lw=0.8, linestyle=":", alpha=0.6)
+        ax2.set_ylabel("Speedup (scalar / SIMD)", fontsize=10)
+        ax2.set_ylim(0.8, max(speedup_valid) * 1.3 if speedup_valid else 2.0)
+
+        ax.set_xticks(range(len(threads)))
+        ax.set_xticklabels([f"t={t}" for t in threads])
+        ax.set_xlabel("Rayon threads")
+        ax.set_ylabel("Rust exec time (s, columnar + suppress\\_results)")
+        ax.set_title(f"SIMD AVX2 vs Scalar — {ds_meta[ds]}\n"
+                     "Binary search computation only (column in cache)")
+        lines = [l1, l2, l3]
+        labels = [l.get_label() for l in lines]
+        ax.legend(lines, labels, fontsize=8, loc="upper right")
+        ax.spines["top"].set_visible(False)
+        ax.grid(True, alpha=0.25, linestyle="--")
+
+        # Annotate max speedup
+        if speedup_valid:
+            peak_i = int(np.argmax(speedup_valid))
+            ax2.annotate(
+                f"peak {speedup_valid[peak_i]:.2f}×\n(t={t_valid[peak_i]})",
+                xy=(threads.index(t_valid[peak_i]), speedup_valid[peak_i]),
+                xytext=(threads.index(t_valid[peak_i]) + 0.4, speedup_valid[peak_i] + 0.05),
+                fontsize=8, color=GREEN,
+                arrowprops=dict(arrowstyle="->", color=GREEN, lw=0.8),
+            )
+
+    fig.suptitle(
+        "AVX2 SIMD Ablation — Scalar partition\\_point vs AVX2 branchless search\n"
+        "SIMD: branchless to 8 elements then single \\_mm256\\_cmp\\_ps; "
+        "expected benefit at low t (latency-bound); null at high t (bandwidth-bound)",
+        fontsize=10, y=1.04,
+    )
+    fig.tight_layout()
+    save(fig, "fig14_simd_ablation")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# FIG 15 — 8-way batch binary search ablation
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# eval_medium (10k queries, 200k hists), columnar engine, suppress_results
+# Filled after ablation_batch_search.sh completes
+batch_data = {
+    "threads": [1, 2, 4, 8, 16, 32, 64],
+    "serial":  [9.254936, 6.396293, 4.552696, 3.703366, 3.408847, 3.902093, 4.013085],
+    "batch":   [9.383771, 6.216734, 4.626401, 3.654220, 4.128600, 3.946816, 3.912632],
+}
+
+
+def fig15_batch():
+    SERIAL_COL = RUST_COL    # blue
+    BATCH_COL  = "#8B008B"   # purple
+
+    threads = batch_data["threads"]
+    serial_t = batch_data["serial"]
+    batch_t  = batch_data["batch"]
+
+    has_data = any(v is not None for v in serial_t)
+    if not has_data:
+        print("  fig15: batch-search data not yet available, skipping")
+        return
+
+    valid_both = [i for i in range(len(threads))
+                  if serial_t[i] is not None and batch_t[i] is not None]
+
+    fig, ax = plt.subplots(1, 1, figsize=(6.5, 4.5))
+    ax2 = ax.twinx()
+
+    xs_s = [i for i, v in enumerate(serial_t) if v is not None]
+    xs_b = [i for i, v in enumerate(batch_t)  if v is not None]
+
+    l1, = ax.plot(xs_s, [serial_t[i] for i in xs_s], "o-", color=SERIAL_COL,
+                  lw=1.8, ms=6, label="Serial (partition\\_point)")
+    l2, = ax.plot(xs_b, [batch_t[i]  for i in xs_b],  "s-", color=BATCH_COL,
+                  lw=1.8, ms=6, label="Batch (8-way lock-step)")
+
+    if valid_both:
+        speedups = [serial_t[i] / batch_t[i] for i in valid_both]
+        l3, = ax2.plot(valid_both, speedups, "D--", color=GREEN, lw=1.3, ms=5,
+                       alpha=0.8, label="Speedup (serial / batch)")
+        ax2.axhline(1.0, color="gray", lw=0.8, linestyle=":", alpha=0.6)
+        ax2.set_ylabel("Speedup (serial / batch)", fontsize=10)
+        ax2.set_ylim(min(speedups) * 0.85, max(speedups) * 1.25)
+
+    ax.set_xticks(range(len(threads)))
+    ax.set_xticklabels([f"t={t}" for t in threads])
+    ax.set_xlabel("Rayon threads")
+    ax.set_ylabel("Rust exec time (s, columnar + suppress\\_results)")
+    ax.set_title("8-Way Batch Binary Search — eval\\_medium (10kq, 200k hists)\n"
+                 "Batch: 8 lock-step searches on same column; Serial: partition\\_point")
+    lines = [l1, l2] + ([l3] if valid_both else [])
+    ax.legend(lines, [l.get_label() for l in lines], fontsize=9, loc="upper right")
+    ax.spines["top"].set_visible(False)
+    ax.grid(True, alpha=0.25, linestyle="--")
+    fig.tight_layout()
+    save(fig, "fig15_batch_search")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# FIG 16 — Flat binary index serialisation benchmark (was fig15 before batch added)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# eval_medium (25.74 GB raw index, 5000 queries, t=16)
+serial_data = {
+    # load-only (3 run median, seconds)
+    "load": {
+        "legacy":    15.192,   # pickle + zstd decompress
+        "flat-ram":  12.076,   # np.load into RAM
+        "flat-mmap":  0.013,   # np.load mmap_mode='r' (page cache warm)
+    },
+    # end-to-end: load + run all 5000 queries at t=16 (seconds)
+    "e2e": {
+        "legacy":   39.666,
+        "flat-ram": 32.334,
+        "flat-mmap":20.956,
+    },
+}
+
+
+def fig16_serialization():
+    fig, (ax_load, ax_e2e) = plt.subplots(1, 2, figsize=(10, 4.5))
+
+    LEGACY_COL  = "#b2182b"   # red
+    RAM_COL     = RUST_COL    # blue
+    MMAP_COL    = GREEN       # green
+
+    labels = ["pickle+zstd\n(legacy)", "flat-binary\n(RAM)", "flat-binary\n(mmap)"]
+    colors = [LEGACY_COL, RAM_COL, MMAP_COL]
+
+    # ── Left: load-only ────────────────────────────────────────────────────────
+    load_vals = [serial_data["load"]["legacy"],
+                 serial_data["load"]["flat-ram"],
+                 serial_data["load"]["flat-mmap"]]
+    bars = ax_load.bar(labels, load_vals, color=colors, width=0.5, edgecolor="white", lw=0.8)
+    for bar, val in zip(bars, load_vals):
+        label = f"{val:.3f}s" if val < 1 else f"{val:.1f}s"
+        ax_load.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.3,
+                     label, ha="center", va="bottom", fontsize=9)
+    ax_load.set_ylabel("Load time (s)")
+    ax_load.set_title("Index load time\n(eval\\_medium, 25.74 GB, 3-run median)")
+    ax_load.set_ylim(0, max(load_vals) * 1.25)
+    ax_load.spines["top"].set_visible(False)
+    ax_load.spines["right"].set_visible(False)
+    ax_load.grid(True, axis="y", alpha=0.25, linestyle="--")
+
+    # Annotate speedups relative to legacy
+    for i, (val, label_str) in enumerate(zip(load_vals[1:], labels[1:]), 1):
+        ratio = load_vals[0] / val
+        ax_load.annotate(
+            f"{ratio:.0f}×\nfaster",
+            xy=(i, val + 0.3),
+            xytext=(i, val + max(load_vals) * 0.15),
+            ha="center", fontsize=8, color=colors[i],
+            fontweight="bold",
+        )
+
+    # ── Right: end-to-end ──────────────────────────────────────────────────────
+    e2e_vals = [serial_data["e2e"]["legacy"],
+                serial_data["e2e"]["flat-ram"],
+                serial_data["e2e"]["flat-mmap"]]
+
+    # Stacked bar: load vs query portions
+    load_parts  = [serial_data["load"]["legacy"],
+                   serial_data["load"]["flat-ram"],
+                   serial_data["load"]["flat-mmap"]]
+    query_parts = [e2e_vals[i] - load_parts[i] for i in range(3)]
+
+    x = range(3)
+    ax_e2e.bar(x, load_parts,  color=colors, alpha=0.55, width=0.5, label="Load time")
+    ax_e2e.bar(x, query_parts, bottom=load_parts,
+               color=colors, alpha=0.9, width=0.5, label="Query time", edgecolor="white", lw=0.8)
+
+    for i, val in enumerate(e2e_vals):
+        ax_e2e.text(i, val + 0.5, f"{val:.1f}s", ha="center", va="bottom", fontsize=9)
+
+    ax_e2e.set_xticks(list(x))
+    ax_e2e.set_xticklabels(labels)
+    ax_e2e.set_ylabel("Total time (s)")
+    ax_e2e.set_title("End-to-end: load + 5000 queries\n(eval\\_medium, t=16, suppress\\_results)")
+    ax_e2e.set_ylim(0, max(e2e_vals) * 1.2)
+    ax_e2e.spines["top"].set_visible(False)
+    ax_e2e.spines["right"].set_visible(False)
+    ax_e2e.grid(True, axis="y", alpha=0.25, linestyle="--")
+    ax_e2e.legend(fontsize=8, loc="upper right")
+
+    # Annotate end-to-end speedup vs legacy
+    for i, val in enumerate(e2e_vals[1:], 1):
+        ratio = e2e_vals[0] / val
+        ax_e2e.annotate(
+            f"{ratio:.2f}×",
+            xy=(i, val + 0.5),
+            xytext=(i, val + max(e2e_vals) * 0.1),
+            ha="center", fontsize=8, color=colors[i], fontweight="bold",
+        )
+
+    fig.suptitle(
+        "Index Serialisation Benchmark — pickle+zstd vs flat binary (.fidx)\n"
+        "mmap delivers 1169× faster load; 1.89× end-to-end improvement (load + 5000 queries)",
+        fontsize=10, y=1.04,
+    )
+    fig.tight_layout()
+    save(fig, "fig16_serialization")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# fig17: Rust rebinning index construction speedup
+# ═══════════════════════════════════════════════════════════════════════════════
+# Python 1-worker baseline (Pool.map with 1 subprocess — includes pickle IPC overhead)
+# Rust Rayon baseline (in-process, zero IPC, parallel rebinning + sort)
+rebinning_data = {
+    "dev_small":   {"python_1w": 4.53,   "python_192w": None,   "rust": 0.73},
+    "eval_medium": {"python_1w": 492.87, "python_192w": 472.14, "rust": 129.79},
+}
+
+def fig17_rebinning():
+    # eval_medium only (has 192-worker data to make the bottleneck visible)
+    py_1w   = rebinning_data["eval_medium"]["python_1w"]
+    py_192w = rebinning_data["eval_medium"]["python_192w"]
+    rs      = rebinning_data["eval_medium"]["rust"]
+
+    # Phase breakdown from logs:
+    #   Python 1w : rebinning=145s, sort=347s
+    #   Python 192w: rebinning=120s, sort=351s
+    #   Rust      : total=130s (both phases combined)
+    py_rebin_1w   = 145.0
+    py_sort_1w    = py_1w - py_rebin_1w
+    py_rebin_192w = 120.0
+    py_sort_192w  = py_192w - py_rebin_192w
+
+    fig, (ax_abs, ax_sp) = plt.subplots(1, 2, figsize=(10, 4.5))
+
+    labels = ["Python\n(1 worker)", "Python\n(192 workers)", "Rust\n(Rayon)"]
+    colors = [PYTHON_COL, "#e08040", RUST_COL]
+    totals = [py_1w, py_192w, rs]
+
+    # ── Left: stacked bar showing rebin vs sort phases ────────────────────────
+    rebin_parts = [py_rebin_1w, py_rebin_192w, rs * 0.27]   # Rust: ~27% rebinning
+    sort_parts  = [py_sort_1w,  py_sort_192w,  rs * 0.73]   # Rust: ~73% sorting
+
+    ax_abs.bar(labels, rebin_parts, color=colors, alpha=0.6, width=0.45,
+               edgecolor="white", lw=0.8, label="Rebinning (parallel)")
+    ax_abs.bar(labels, sort_parts, bottom=rebin_parts, color=colors, alpha=0.95,
+               width=0.45, edgecolor="white", lw=0.8, label="Cumsum + sort (sequential in Python)")
+
+    for i, (tot, rb, st) in enumerate(zip(totals, rebin_parts, sort_parts)):
+        ax_abs.text(i, tot + 5, f"{tot:.0f}s", ha="center", va="bottom", fontsize=10,
+                    fontweight="bold")
+
+    ax_abs.set_ylabel("Index construction time (s)")
+    ax_abs.set_title("eval\\_medium (997k histograms)\nPhase breakdown: rebin vs sort")
+    ax_abs.legend(fontsize=8, loc="upper right")
+    ax_abs.set_ylim(0, max(totals) * 1.2)
+    ax_abs.spines["top"].set_visible(False)
+    ax_abs.spines["right"].set_visible(False)
+    ax_abs.grid(True, axis="y", alpha=0.25, linestyle="--")
+
+    # Annotate that 192w ≈ 1w (sort dominates)
+    ax_abs.annotate("192 workers\n≈ 1 worker\n(sort bottleneck)",
+                    xy=(1, py_192w + 5), xytext=(1.45, py_192w * 0.85),
+                    fontsize=8, color="#e08040",
+                    arrowprops=dict(arrowstyle="->", color="#e08040", lw=1.0))
+
+    # ── Right: speedup bars ───────────────────────────────────────────────────
+    sp_labels = ["vs. Python 1w", "vs. Python 192w"]
+    sp_vals   = [py_1w / rs, py_192w / rs]
+    sp_cols   = [PYTHON_COL, "#e08040"]
+
+    x = np.arange(len(sp_labels))
+    bars_sp = ax_sp.bar(x, sp_vals, color=sp_cols, edgecolor="white", lw=0.8, width=0.45)
+    for bar, sp in zip(bars_sp, sp_vals):
+        ax_sp.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.04,
+                   f"{sp:.2f}×", ha="center", va="bottom", fontsize=12, fontweight="bold",
+                   color=bar.get_facecolor())
+
+    ax_sp.axhline(1.0, color=GRAY, linestyle="--", lw=1.2, label="No improvement (1×)")
+    ax_sp.set_xticks(x)
+    ax_sp.set_xticklabels(sp_labels)
+    ax_sp.set_ylabel("Rust speedup")
+    ax_sp.set_title("Rust speedup over Python\n(eval\\_medium, rebinning construction)")
+    ax_sp.set_ylim(0, max(sp_vals) * 1.25)
+    ax_sp.legend(fontsize=9)
+    ax_sp.spines["top"].set_visible(False)
+    ax_sp.spines["right"].set_visible(False)
+    ax_sp.grid(True, axis="y", alpha=0.25, linestyle="--")
+
+    fig.suptitle(
+        "Rust rebinning construction: 3.64–3.80× faster than Python (any worker count)\n"
+        "Python's 192-worker multiprocessing saves only 4.4\\% — sort is the bottleneck, not rebinning",
+        fontsize=10, y=1.04,
+    )
+    fig.tight_layout()
+    save(fig, "fig17_rebinning")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# FIG 18 — Full pipeline: all configs combined (query-phase thread sweep)
+# Source: logs/full_pipeline/eval_medium-{py,f32,f16,colf16}-tN.log
+# Configs: py (Python single-thread), f32 (Rust row f32), f16 (Rust row f16),
+#          colf16 (Rust columnar + f16) — first time col+f16 is measured together
+# ═══════════════════════════════════════════════════════════════════════════════
+
+full_pipeline_data = {
+    "eval_medium": {
+        # query execution times (seconds) — "Rust index-based query execution time" from logs
+        # Source: logs/full_pipeline/eval_medium-{py,f32,f16,colf16}-tN.log (2026-04-23)
+        # Extraction: grep "Rust index-based query execution time" (engine only, excl. FainderIndex init)
+        # Python: single-threaded (FAINDER_NO_RUST=1, n_workers=None), constant across threads
+        "threads": [1,      2,      4,     8,     16,    32,    64],
+        "py":      [18.27,  18.62,  19.17, 17.12, 18.41, 16.72, 15.38],  # median ~18.3s
+        "f32":     [24.58,  13.73,  7.45,  4.92,  3.54,  3.80,  3.82],
+        "f16":     [24.07,  14.49,  7.30,  4.96,  3.41,  3.68,  3.72],
+        "colf16":  [10.10,  6.96,   6.09,  4.40,  4.12,  4.22,  4.30],
+        # Pipeline stage constants (from prior measurements on eval_medium)
+        "py_load":    15.2,    # pickle+zstd load time (s) — legacy zst format
+        "mmap_load":  0.013,   # fidx mmap load time (s) — load_flat_index mmap only
+        "py_build":   492.87,  # index construction, Python 1-worker (s)
+        "rs_build":   129.79,  # index construction, Rust Rayon (s)
+    },
+}
+
+
+def fig18_full_pipeline():
+    d = full_pipeline_data["eval_medium"]
+    threads = d["threads"]
+    py     = d["py"]
+    f32    = d["f32"]
+    f16    = d["f16"]
+    colf16 = d["colf16"]
+
+    # Skip if data not yet filled in
+    if any(x is None for x in py):
+        print("  fig18: full_pipeline_data not yet populated, skipping")
+        return
+
+    py_load = d["py_load"]; mmap_load = d["mmap_load"]
+    py_build = d["py_build"]; rs_build = d["rs_build"]
+
+    # Best (minimum) per config
+    py_ref      = float(np.median(py))  # Python doesn't scale; median over thread-count noise
+    f32_best    = min(f32)
+    f16_best    = min(f16)
+    colf16_best = min(colf16)
+    # Overall best Rust config (row-centric usually wins at high t; columnar at t=1)
+    rs_best = min(f16_best, colf16_best)
+    rs_label = "col+f16" if colf16_best <= f16_best else "f16"
+
+    fig, (ax_sweep, ax_pipe) = plt.subplots(1, 2, figsize=(12, 5))
+
+    # ── Left: thread sweep (all 4 configs) ───────────────────────────────────
+    colors_cfg = {
+        "py":     PYTHON_COL,
+        "f32":    "#888888",
+        "f16":    "#4dac26",
+        "colf16": RUST_COL,
+    }
+    labels_cfg = {
+        "py":     f"Python single-thread ({py_ref:.1f}s, thread-invariant)",
+        "f32":    f"Rust row f32 (best {f32_best:.2f}s at t={threads[int(np.argmin(f32))]})",
+        "f16":    f"Rust row f16 (best {f16_best:.2f}s at t={threads[int(np.argmin(f16))]})",
+        "colf16": f"Rust col+f16 (best {colf16_best:.2f}s at t={threads[int(np.argmin(colf16))]})",
+    }
+    markers = {"f32": "^", "f16": "D", "colf16": "o"}
+
+    # Python as dashed horizontal line (FAINDER_NUM_THREADS has no effect)
+    ax_sweep.axhline(py_ref, color=PYTHON_COL, linestyle="--", lw=1.5,
+                     label=labels_cfg["py"])
+
+    for cfg, vals in [("f32", f32), ("f16", f16), ("colf16", colf16)]:
+        ax_sweep.plot(threads, vals, color=colors_cfg[cfg],
+                      marker=markers[cfg], lw=1.8, ms=6, label=labels_cfg[cfg])
+
+    # Annotate best Rust row-centric point
+    best_row_idx = int(np.argmin(f16))
+    ax_sweep.annotate(
+        f"f16 t={threads[best_row_idx]}: {f16_best:.2f}s\n({py_ref/f16_best:.2f}× over Python)",
+        xy=(threads[best_row_idx], f16_best),
+        xytext=(threads[best_row_idx] * 1.6, f16_best + 1.5),
+        fontsize=8, color="#4dac26",
+        arrowprops=dict(arrowstyle="->", color="#4dac26", lw=1.0),
+    )
+    # Annotate colf16 advantage at t=1
+    ax_sweep.annotate(
+        f"col+f16 t=1: {colf16[0]:.1f}s\n({f32[0]/colf16[0]:.2f}× over row-f32)",
+        xy=(1, colf16[0]),
+        xytext=(1.5, colf16[0] + 2.0),
+        fontsize=8, color=RUST_COL,
+        arrowprops=dict(arrowstyle="->", color=RUST_COL, lw=1.0),
+    )
+
+    ax_sweep.set_xscale("log", base=2)
+    ax_sweep.set_xticks(threads)
+    ax_sweep.get_xaxis().set_major_formatter(ticker.ScalarFormatter())
+    ax_sweep.set_xlabel("Rayon threads")
+    ax_sweep.set_ylabel("Query execution time (s, suppress\\_results=True)")
+    ax_sweep.set_title("(a) Query-phase thread sweep — eval\\_medium\n(10 000 queries, 200k histograms)")
+    ax_sweep.legend(fontsize=8, loc="upper right")
+    ax_sweep.spines["top"].set_visible(False)
+    ax_sweep.spines["right"].set_visible(False)
+    ax_sweep.grid(True, alpha=0.3, linestyle="--")
+
+    # ── Right: full pipeline stacked bars ────────────────────────────────────
+    # Shows per-batch cost: Python (load+query) vs Rust best (mmap+query).
+    # FainderIndex init (~17s) is a one-time cost amortized over query batches;
+    # excluded here to show the asymptotic per-batch cost.
+    py_lq   = py_load + py_ref
+    rs_lq   = mmap_load + rs_best
+    py_e2e  = py_build + py_load + py_ref
+    rs_e2e  = rs_build + mmap_load + rs_best
+
+    configs   = ["Python\n(per-batch)", f"Rust {rs_label}\n(per-batch)"]
+    load_bar  = [py_load,  mmap_load]
+    query_bar = [py_ref,   rs_best]
+    totals    = [py_lq,    rs_lq]
+
+    x = np.arange(2)
+    ax_pipe.bar(x, load_bar,  color=[PYTHON_COL, RUST_COL], alpha=0.45, width=0.5,
+                edgecolor="white", lw=0.8, label="Index load")
+    ax_pipe.bar(x, query_bar, bottom=load_bar, color=[PYTHON_COL, RUST_COL],
+                alpha=0.9,  width=0.5, edgecolor="white", lw=0.8, label="Query execution")
+
+    for i, tot in enumerate(totals):
+        ax_pipe.text(i, tot + 0.4, f"{tot:.2f}s", ha="center", va="bottom",
+                     fontsize=11, fontweight="bold")
+    ax_pipe.text(1, totals[1] + 2.8, f"{py_lq/rs_lq:.2f}×", ha="center",
+                 va="bottom", fontsize=13, color=RUST_COL, fontweight="bold")
+
+    ax_pipe.set_xticks(x)
+    ax_pipe.set_xticklabels(configs)
+    ax_pipe.set_ylabel("Time per batch (s)")
+    ax_pipe.set_title(f"(b) Load + query per batch (eval\\_medium)\n"
+                      f"Rust {rs_label} at optimal t={threads[int(np.argmin(f16 if rs_label=='f16' else colf16))]}")
+    ax_pipe.legend(fontsize=9)
+    ax_pipe.set_ylim(0, max(totals) * 1.35)
+    ax_pipe.spines["top"].set_visible(False)
+    ax_pipe.spines["right"].set_visible(False)
+    ax_pipe.grid(True, axis="y", alpha=0.25, linestyle="--")
+
+    # Annotation box: full e2e and repeated-batch numbers
+    ax_pipe.text(0.5, -0.18,
+                 f"Full pipeline (build+load+query): Python {py_e2e:.0f}s → Rust {rs_e2e:.1f}s ({py_e2e/rs_e2e:.2f}×)\n"
+                 f"100 batches (pre-built): Python {100*py_lq:.0f}s → Rust {100*rs_lq:.0f}s ({py_lq/rs_lq:.2f}×)",
+                 transform=ax_pipe.transAxes,
+                 ha="center", va="top", fontsize=8.5,
+                 bbox=dict(boxstyle="round,pad=0.3", fc="lightyellow", ec="goldenrod", lw=0.8))
+
+    fig.suptitle(
+        f"Full pipeline benchmark — eval\\_medium, 10k queries, 200k histograms\n"
+        f"Query engine: Python {py_ref:.1f}s → Rust {rs_label} {rs_best:.2f}s "
+        f"({py_ref/rs_best:.2f}×)  |  Per-batch (load+query): {py_lq:.1f}s → {rs_lq:.2f}s "
+        f"({py_lq/rs_lq:.2f}×)",
+        fontsize=10, y=1.03,
+    )
+    fig.tight_layout()
+    save(fig, "fig18_full_pipeline")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # RESULTS.md
 # ═══════════════════════════════════════════════════════════════════════════════
 def write_results_md():
@@ -816,6 +1345,11 @@ if __name__ == "__main__":
     fig10_f16_comparison()
     fig11_eytzinger()
     fig13_columnar()
+    fig14_simd()
+    fig15_batch()
+    fig16_serialization()
+    fig17_rebinning()
+    fig18_full_pipeline()
     write_results_md()
     print(f"\nAll figures → {OUT.resolve()}")
     print("Results doc → RESULTS.md")

@@ -1,3 +1,4 @@
+import json
 import pickle
 import sys
 from multiprocessing import set_start_method
@@ -152,6 +153,130 @@ def load_input(path: Path | str, name: str | None = "input") -> Any:
         logger.debug(f"Loading {name} from {path}")
     with zstd.open(path, "rb") as file:
         return pickle.load(file)
+
+
+# ── Flat binary index format (.fidx directory) ────────────────────────────────
+# Layout: {name}.fidx/
+#   meta.json            — cluster count, modes, dtype, shapes
+#   bins_{i}.npy         — float64 bin edges for cluster i
+#   pctls_{i}_{m}.npy    — float32/16 sorted percentiles  (Fortran-order)
+#   ids_{i}_{m}.npy      — uint32   sorted histogram IDs  (Fortran-order)
+#
+# Why faster than pickle+zstd:
+#   pickle+zstd: decompress ~500MB → Python object tree (list/tuple wrappers) → numpy
+#   .npy:        np.load reads a tiny header + raw bytes with a single C read call
+#   mmap_mode:   maps the file into virtual memory; OS pages in only accessed data
+# ─────────────────────────────────────────────────────────────────────────────
+
+FIDX_SUFFIX = ".fidx"
+
+
+def save_flat_index(
+    path: Path | str,
+    pctl_index: list,
+    cluster_bins: list,
+    name: str | None = "index",
+) -> Path:
+    """Save a percentile index as a directory of .npy files (flat binary format).
+
+    Significantly faster to load than pickle+zstd; supports zero-copy mmap loading.
+    """
+    path = Path(path)
+    if path.suffix != FIDX_SUFFIX:
+        path = path.with_suffix(FIDX_SUFFIX)
+    path.mkdir(parents=True, exist_ok=True)
+
+    n_clusters = len(pctl_index)
+    n_modes = len(pctl_index[0])
+    pctl_dtype = str(pctl_index[0][0][0].dtype)
+
+    meta = {
+        "version": 1,
+        "n_clusters": n_clusters,
+        "n_modes": n_modes,
+        "pctl_dtype": pctl_dtype,
+        "clusters": [],
+    }
+
+    for i, (cluster, bins) in enumerate(zip(pctl_index, cluster_bins)):
+        np.save(path / f"bins_{i}.npy", bins)
+        cluster_meta = {"n_hists": int(cluster[0][0].shape[0]), "n_bins": int(cluster[0][0].shape[1])}
+        for m, (pctls, ids) in enumerate(cluster):
+            # Ensure arrays are Fortran-order before saving (preserve layout)
+            np.save(path / f"pctls_{i}_{m}.npy", np.asfortranarray(pctls))
+            np.save(path / f"ids_{i}_{m}.npy", np.asfortranarray(ids))
+        meta["clusters"].append(cluster_meta)
+
+    (path / "meta.json").write_text(json.dumps(meta, indent=2))
+
+    if name:
+        total_bytes = sum(f.stat().st_size for f in path.iterdir() if f.suffix == ".npy")
+        logger.debug(f"Saved {name} to {path} ({total_bytes / 1e9:.2f} GB raw)")
+    return path
+
+
+def load_flat_index(
+    path: Path | str,
+    mmap_mode: str | None = None,
+    name: str | None = "index",
+) -> tuple[list, list]:
+    """Load a flat binary index from a .fidx directory.
+
+    Args:
+        mmap_mode: None = read into RAM (fast, ~2–5s for eval_medium).
+                   'r'  = memory-map (near-zero startup; OS pages in on access).
+    """
+    path = Path(path)
+    if path.suffix != FIDX_SUFFIX:
+        path = path.with_suffix(FIDX_SUFFIX)
+
+    meta = json.loads((path / "meta.json").read_text())
+    n_clusters = meta["n_clusters"]
+    n_modes = meta["n_modes"]
+
+    if name:
+        logger.debug(f"Loading {name} from {path} (mmap={mmap_mode})")
+
+    pctl_index = []
+    cluster_bins = []
+
+    for i in range(n_clusters):
+        bins = np.load(path / f"bins_{i}.npy", mmap_mode=mmap_mode)
+        cluster = []
+        for m in range(n_modes):
+            pctls = np.load(path / f"pctls_{i}_{m}.npy", mmap_mode=mmap_mode)
+            ids   = np.load(path / f"ids_{i}_{m}.npy",   mmap_mode=mmap_mode)
+            cluster.append((pctls, ids))
+        pctl_index.append(tuple(cluster))
+        cluster_bins.append(bins)
+
+    return pctl_index, cluster_bins
+
+
+def is_flat_index(path: Path | str) -> bool:
+    """Return True if path looks like a .fidx directory."""
+    path = Path(path)
+    if path.suffix == FIDX_SUFFIX and path.is_dir():
+        return True
+    # Also accept path without suffix if the .fidx dir exists
+    fidx = path.with_suffix(FIDX_SUFFIX)
+    return fidx.is_dir()
+
+
+def load_index(
+    path: Path | str,
+    mmap_mode: str | None = None,
+    name: str | None = "index",
+) -> tuple[list, list]:
+    """Unified loader: auto-detects pickle+zstd (.zst) vs flat binary (.fidx)."""
+    path = Path(path)
+    fidx_path = path if path.suffix == FIDX_SUFFIX else path.with_suffix(FIDX_SUFFIX)
+
+    if fidx_path.is_dir():
+        return load_flat_index(fidx_path, mmap_mode=mmap_mode, name=name)
+    else:
+        data = load_input(path, name=name)
+        return data
 
 
 def configure_run(

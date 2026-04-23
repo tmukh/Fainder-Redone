@@ -45,6 +45,106 @@ fn do_partition_le(haystack: &[f32], target: f32) -> usize {
     }
 }
 
+// ── 8-way interleaved binary search ──────────────────────────────────────────
+//
+// Serial: one query searches the column sequentially → 12 dependent cache misses,
+//         each stalls until the prior load resolves (~80 ns each).
+//
+// Batch (B=8): run 8 searches in lock-step. Each step computes 8 independent
+//              midpoints then issues 8 independent loads. Because the loads have
+//              no data dependency on each other the CPU's out-of-order engine
+//              issues all 8 simultaneously, filling its MSHR slots and hiding
+//              7/8ths of the latency per round. The first 1–3 steps additionally
+//              share the same midpoint value (all 8 searches start from the same
+//              mid = n/2), so those loads are free after the first hit.
+//
+// Used only in the columnar engine, where the column is already in L2 cache.
+// Safety contract for get_unchecked: mids[i] < n when lo[i] < hi[i], and is
+// clamped to 0 (always valid for n≥1) when lo[i] ≥ hi[i].
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[cfg(feature = "batch-search")]
+const BATCH: usize = 8;
+
+/// Run up to 8 binary searches on `col_vals` in lock-step.
+/// `queries[i] = (q_idx, target, is_gt)` for i in 0..chunk.len().
+/// Returns `lo[8]`; inactive slots (i ≥ chunk.len()) return 0.
+#[cfg(feature = "batch-search")]
+#[inline]
+fn batch_partition_point_8(col_vals: &[f32], queries: &[(usize, f32, bool)]) -> [usize; BATCH] {
+    let m = queries.len();
+    let n = col_vals.len();
+    let mut lo = [0usize; BATCH];
+    let mut hi = [n; BATCH];
+    for i in m..BATCH { hi[i] = 0; }  // pad: lo[i]=hi[i]=0 → converged immediately
+
+    if n == 0 { return lo; }
+    // floor(log2(n)) + 1 iterations covers all cases; inactive/converged slots
+    // just do a dummy load of col_vals[0] each step (harmless).
+    let n_steps = (usize::BITS - n.leading_zeros()) as usize;
+
+    for _ in 0..n_steps {
+        // Compute midpoints: pure register arithmetic, no loads.
+        // When lo[i] >= hi[i] (converged), we clamp to index 0.
+        let mids: [usize; BATCH] = std::array::from_fn(|i| {
+            if lo[i] < hi[i] { lo[i] + (hi[i] - lo[i]) / 2 } else { 0 }
+        });
+        // Issue 8 independent loads simultaneously.
+        // SAFETY: mids[i] < hi[i] <= n when active; mids[i] = 0 < n otherwise.
+        let vals: [f32; BATCH] =
+            std::array::from_fn(|i| unsafe { *col_vals.get_unchecked(mids[i]) });
+        // Update lo/hi (register ops only — no further loads).
+        for i in 0..BATCH {
+            if lo[i] < hi[i] {
+                let (_, target, is_gt) = queries[i];
+                if if is_gt { vals[i] <= target } else { vals[i] < target } {
+                    lo[i] = mids[i] + 1;
+                } else {
+                    hi[i] = mids[i];
+                }
+            }
+        }
+    }
+    lo
+}
+
+/// f16 variant: values are half::f16 stored in the column; comparisons use f32.
+#[cfg(all(feature = "batch-search", feature = "f16", not(feature = "aos"), not(feature = "eytzinger")))]
+#[inline]
+fn batch_partition_point_8_f16(
+    col_vals: &[half::f16],
+    queries: &[(usize, f32, bool)],
+) -> [usize; BATCH] {
+    let m = queries.len();
+    let n = col_vals.len();
+    let mut lo = [0usize; BATCH];
+    let mut hi = [n; BATCH];
+    for i in m..BATCH { hi[i] = 0; }
+
+    if n == 0 { return lo; }
+    let n_steps = (usize::BITS - n.leading_zeros()) as usize;
+
+    for _ in 0..n_steps {
+        let mids: [usize; BATCH] = std::array::from_fn(|i| {
+            if lo[i] < hi[i] { lo[i] + (hi[i] - lo[i]) / 2 } else { 0 }
+        });
+        // SAFETY: same as f32 variant above.
+        let vals: [f32; BATCH] =
+            std::array::from_fn(|i| unsafe { col_vals.get_unchecked(mids[i]).to_f32() });
+        for i in 0..BATCH {
+            if lo[i] < hi[i] {
+                let (_, target, is_gt) = queries[i];
+                if if is_gt { vals[i] <= target } else { vals[i] < target } {
+                    lo[i] = mids[i] + 1;
+                } else {
+                    hi[i] = mids[i];
+                }
+            }
+        }
+    }
+    lo
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Comparison {
     Lt, // <
@@ -395,6 +495,25 @@ fn execute_columnar(
                     let col_vals = &sub.values[idx_offset..idx_offset + n_hists];
                     let col_ids  = &sub.indices[idx_offset..idx_offset + n_hists];
 
+                    #[cfg(feature = "batch-search")]
+                    for chunk in group.chunks(BATCH) {
+                        let hs = batch_partition_point_8(col_vals, chunk);
+                        for (i, &(q_idx, _, is_gt)) in chunk.iter().enumerate() {
+                            let h = hs[i];
+                            if !is_gt {
+                                if h < n_hists {
+                                    let start = buf.len();
+                                    buf.extend_from_slice(&col_ids[h..]);
+                                    offsets.push((q_idx, start, buf.len()));
+                                }
+                            } else if h > 0 {
+                                let start = buf.len();
+                                buf.extend_from_slice(&col_ids[..h]);
+                                offsets.push((q_idx, start, buf.len()));
+                            }
+                        }
+                    }
+                    #[cfg(not(feature = "batch-search"))]
                     for &(q_idx, target, is_gt) in group {
                         let (h, take_tail) = if !is_gt {
                             (do_partition_lt(col_vals, target), true)
@@ -508,6 +627,25 @@ fn execute_columnar(
                     let col_vals = &sub.values[idx_offset..idx_offset + n_hists];
                     let col_ids  = &sub.indices[idx_offset..idx_offset + n_hists];
 
+                    #[cfg(feature = "batch-search")]
+                    for chunk in group.chunks(BATCH) {
+                        let hs = batch_partition_point_8_f16(col_vals, chunk);
+                        for (i, &(q_idx, _, is_gt)) in chunk.iter().enumerate() {
+                            let h = hs[i];
+                            if !is_gt {
+                                if h < n_hists {
+                                    let start = buf.len();
+                                    buf.extend_from_slice(&col_ids[h..]);
+                                    offsets.push((q_idx, start, buf.len()));
+                                }
+                            } else if h > 0 {
+                                let start = buf.len();
+                                buf.extend_from_slice(&col_ids[..h]);
+                                offsets.push((q_idx, start, buf.len()));
+                            }
+                        }
+                    }
+                    #[cfg(not(feature = "batch-search"))]
                     for &(q_idx, target, is_gt) in group {
                         let (h, take_tail) = if !is_gt {
                             (col_vals.partition_point(|x| x.to_f32() < target), true)

@@ -146,6 +146,7 @@ dependencies = [
  "env_logger",
  "half",
  "log",
+ "ndarray",
  "numpy",
  "pyo3",
  "rayon",

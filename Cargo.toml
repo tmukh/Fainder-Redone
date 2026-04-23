@@ -15,6 +15,8 @@ aos = []
 cluster-par = []        # Nested cluster-level parallelism (queries × clusters work units)
 f16 = ["dep:half"]      # Store percentile values as f16 — halves index memory footprint
 eytzinger = []          # BFS-order values for prefetch-friendly binary search
+simd = []               # AVX2-vectorized binary search (f32 SoA only)
+batch-search = []       # 8-way interleaved binary search (one column, 8 queries in lock-step)
 
 [dependencies]
 pyo3 = { version = "0.22.0", features = ["extension-module", "abi3-py310"] }
@@ -24,3 +26,4 @@ thiserror = "1.0"
 log = "0.4"
 env_logger = "0.11"
 half = { version = "2.4", optional = true }
+ndarray = "0.16"

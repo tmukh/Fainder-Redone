@@ -33,7 +33,39 @@ from fainder.utils import (
     unlink_pointers,
 )
 
+try:
+    from fainder.fainder_core import build_rebinning_index_cluster as _rust_build_cluster
+    _RUST_REBINNING = True
+except ImportError:
+    _RUST_REBINNING = False
+
 counter: Any
+
+
+def _rust_build_rebinning_index(
+    clustered_hists: list[list[tuple[np.uint32, "Histogram"]]],
+    cluster_bins: list["F64Array"],
+) -> "list[RebinningIndex]":
+    """Rust+Rayon drop-in for rebin_collection + create_rebinning_index.
+
+    Only supports continuous_value approximation.  Returns the same type as
+    create_rebinning_index: list of (((pctls, ids),),) tuples, one per cluster.
+    """
+    pctl_index = []
+    for i, cluster in enumerate(clustered_hists):
+        ids_raw, hists = zip(*cluster, strict=True)
+        ids_arr = np.array(ids_raw, dtype=np.uint32)
+        values = [np.ascontiguousarray(h[0], dtype=np.float32) for h in hists]
+        bin_edges = [np.ascontiguousarray(h[1], dtype=np.float64) for h in hists]
+        pctls, ids_out = _rust_build_cluster(
+            ids=list(ids_arr),
+            hist_values=values,
+            hist_bin_edges=bin_edges,
+            new_bins=cluster_bins[i],
+            rounding_precision=ROUNDING_PRECISION,
+        )
+        pctl_index.append(((pctls, ids_out),))
+    return pctl_index
 
 
 def rebin_histogram(
@@ -576,14 +608,22 @@ def create_index(
     intermediates: Any
     if "rebinning" in index_method:
         if index_method == "rebinning":
-            logger.debug("Starting rebinning")
-            rebinned_hists = rebin_collection(
-                clustered_hists, cluster_bins, bin_estimation, workers
-            )
-            logger.debug("Starting index creation")
-            pctl_index = create_rebinning_index(rebinned_hists, cluster_bins, index_dtype)
-            shm_pointers = None
-            intermediates = (rebinned_hists, cluster_bins)
+            if _RUST_REBINNING and bin_estimation == "continuous_value":
+                logger.debug("Starting rebinning (Rust+Rayon)")
+                pctl_index = _rust_build_rebinning_index(
+                    clustered_hists, cluster_bins
+                )
+                shm_pointers = None
+                intermediates = None
+            else:
+                logger.debug("Starting rebinning (Python)")
+                rebinned_hists = rebin_collection(
+                    clustered_hists, cluster_bins, bin_estimation, workers
+                )
+                logger.debug("Starting index creation")
+                pctl_index = create_rebinning_index(rebinned_hists, cluster_bins, index_dtype)
+                shm_pointers = None
+                intermediates = (rebinned_hists, cluster_bins)
 
         elif index_method == "rebinning-shm":
             logger.debug("Initializing SHM index")

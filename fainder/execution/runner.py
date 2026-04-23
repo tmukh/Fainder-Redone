@@ -21,6 +21,7 @@ from fainder.utils import (
     filter_hists,
     filter_index,
     load_input,
+    load_index,
     save_output,
 )
 
@@ -216,7 +217,10 @@ def main() -> None:
     configure_run(args.log_level, args.log_file)
     logger.debug(vars(args))
 
-    input_data = load_input(args.input, name="input data")
+    if args.input_type == "index":
+        input_data = load_index(args.input, mmap_mode="r", name="input data")
+    else:
+        input_data = load_input(args.input, name="input data")
     queries = load_input(args.queries, name="queries")
     if args.hist_filter:
         hist_filter = load_input(args.hist_filter, name="histogram filter")
