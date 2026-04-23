@@ -3,6 +3,48 @@ use numpy::IntoPyArray;
 use pyo3::prelude::*;
 use rayon::prelude::*;
 
+// ── SIMD dispatch helpers ─────────────────────────────────────────────────────
+//
+// `do_partition_lt(slice, t)` = first index where slice[i] >= t  (like partition_point(|&x| x < t))
+// `do_partition_le(slice, t)` = first index where slice[i] >  t  (like partition_point(|&x| x <= t))
+//
+// Default build: delegates to Rust stdlib branchless partition_point.
+// `--features simd`: uses AVX2 vectorized final stage (see src/simd_search.rs).
+//
+// Runtime CPU check is cached by `is_x86_feature_detected!` (bool flag, no syscall per call).
+
+#[cfg(not(feature = "simd"))]
+#[inline(always)]
+fn do_partition_lt(haystack: &[f32], target: f32) -> usize {
+    haystack.partition_point(|&x| x < target)
+}
+
+#[cfg(not(feature = "simd"))]
+#[inline(always)]
+fn do_partition_le(haystack: &[f32], target: f32) -> usize {
+    haystack.partition_point(|&x| x <= target)
+}
+
+#[cfg(all(feature = "simd", target_arch = "x86_64"))]
+#[inline(always)]
+fn do_partition_lt(haystack: &[f32], target: f32) -> usize {
+    if is_x86_feature_detected!("avx2") {
+        unsafe { crate::simd_search::partition_lt_avx2(haystack, target) }
+    } else {
+        haystack.partition_point(|&x| x < target)
+    }
+}
+
+#[cfg(all(feature = "simd", target_arch = "x86_64"))]
+#[inline(always)]
+fn do_partition_le(haystack: &[f32], target: f32) -> usize {
+    if is_x86_feature_detected!("avx2") {
+        unsafe { crate::simd_search::partition_le_avx2(haystack, target) }
+    } else {
+        haystack.partition_point(|&x| x <= target)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Comparison {
     Lt, // <
@@ -159,10 +201,10 @@ fn execute_row_centric(
                     let col_vals = &sub.values[idx_offset..idx_offset + n_hists];
                     let col_ids  = &sub.indices[idx_offset..idx_offset + n_hists];
                     if !is_gt {
-                        let h = col_vals.partition_point(|&x| x < target);
+                        let h = do_partition_lt(col_vals, target);
                         if h < n_hists { col_ids[h..].to_vec() } else { vec![] }
                     } else {
-                        let h = col_vals.partition_point(|&x| x <= target);
+                        let h = do_partition_le(col_vals, target);
                         if h > 0 { col_ids[..h].to_vec() } else { vec![] }
                     }
                 }
@@ -355,9 +397,9 @@ fn execute_columnar(
 
                     for &(q_idx, target, is_gt) in group {
                         let (h, take_tail) = if !is_gt {
-                            (col_vals.partition_point(|&x| x < target), true)
+                            (do_partition_lt(col_vals, target), true)
                         } else {
-                            (col_vals.partition_point(|&x| x <= target), false)
+                            (do_partition_le(col_vals, target), false)
                         };
                         if take_tail {
                             if h < n_hists {

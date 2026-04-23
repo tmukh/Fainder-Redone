@@ -2,6 +2,8 @@ use pyo3::prelude::*;
 
 mod engine;
 mod index;
+#[cfg(feature = "simd")]
+mod simd_search;
 
 /// fainder-core: High-performance execution engine for Fainder.
 #[pymodule]
