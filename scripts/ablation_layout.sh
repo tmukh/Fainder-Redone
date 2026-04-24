@@ -58,6 +58,7 @@ run_one() {
     maturin develop --release -q 2>&1 | tail -1
     echo "  [$dataset/$mode_label] SoA (t=1)..."
     run-queries -i "$index_path" -t index -q "$queries" -m recall \
+        --suppress-results \
         --log-level INFO \
         --log-file "$LOG_DIR/$dataset-soa-$log_suffix.log" \
         && echo "  OK" || echo "  FAILED"
@@ -66,6 +67,7 @@ run_one() {
     maturin develop --release --features aos -q 2>&1 | tail -1
     echo "  [$dataset/$mode_label] AoS (t=1)..."
     run-queries -i "$index_path" -t index -q "$queries" -m recall \
+        --suppress-results \
         --log-level INFO \
         --log-file "$LOG_DIR/$dataset-aos-$log_suffix.log" \
         && echo "  OK" || echo "  FAILED"

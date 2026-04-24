@@ -17,6 +17,7 @@ f16 = ["dep:half"]      # Store percentile values as f16 — halves index memory
 eytzinger = []          # BFS-order values for prefetch-friendly binary search
 simd = []               # AVX2-vectorized binary search (f32 SoA only)
 batch-search = []       # 8-way interleaved binary search (one column, 8 queries in lock-step)
+kary = []               # 4-way branchless search (shorter CMOV dep chain, see src/kary_search.rs)
 
 [dependencies]
 pyo3 = { version = "0.22.0", features = ["extension-module", "abi3-py310"] }

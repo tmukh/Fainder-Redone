@@ -68,6 +68,7 @@ run_sweep() {
         FAINDER_NUM_THREADS=$t run-queries \
             -i "$index" -t index \
             -q "$queries" -m recall \
+            --suppress-results \
             --log-level INFO \
             --log-file "$LOG_DIR/$dataset-$label-t$t.log" \
             && echo "  OK" || echo "  FAILED"

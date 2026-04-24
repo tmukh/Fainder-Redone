@@ -5,6 +5,8 @@ mod index;
 mod rebinning;
 #[cfg(feature = "simd")]
 mod simd_search;
+#[cfg(feature = "kary")]
+mod kary_search;
 
 /// fainder-core: High-performance execution engine for Fainder.
 #[pymodule]

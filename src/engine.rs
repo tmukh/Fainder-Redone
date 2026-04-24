@@ -13,13 +13,22 @@ use rayon::prelude::*;
 //
 // Runtime CPU check is cached by `is_x86_feature_detected!` (bool flag, no syscall per call).
 
-#[cfg(not(feature = "simd"))]
+// Build matrix:
+//   default:         stdlib partition_point (branchless binary CMOV)
+//   --features simd: AVX2 partition_lt/le_avx2 (final-stage vector compare)
+//   --features kary: 4-way branchless partition_{lt,le}_4way (reduces CMOV chain depth)
+// simd and kary are mutually exclusive; enabling both is a compile error.
+
+#[cfg(all(feature = "simd", feature = "kary"))]
+compile_error!("features `simd` and `kary` are mutually exclusive; enable at most one");
+
+#[cfg(not(any(feature = "simd", feature = "kary")))]
 #[inline(always)]
 fn do_partition_lt(haystack: &[f32], target: f32) -> usize {
     haystack.partition_point(|&x| x < target)
 }
 
-#[cfg(not(feature = "simd"))]
+#[cfg(not(any(feature = "simd", feature = "kary")))]
 #[inline(always)]
 fn do_partition_le(haystack: &[f32], target: f32) -> usize {
     haystack.partition_point(|&x| x <= target)
@@ -43,6 +52,18 @@ fn do_partition_le(haystack: &[f32], target: f32) -> usize {
     } else {
         haystack.partition_point(|&x| x <= target)
     }
+}
+
+#[cfg(feature = "kary")]
+#[inline(always)]
+fn do_partition_lt(haystack: &[f32], target: f32) -> usize {
+    crate::kary_search::partition_lt_4way(haystack, target)
+}
+
+#[cfg(feature = "kary")]
+#[inline(always)]
+fn do_partition_le(haystack: &[f32], target: f32) -> usize {
+    crate::kary_search::partition_le_4way(haystack, target)
 }
 
 // ── 8-way interleaved binary search ──────────────────────────────────────────
@@ -314,10 +335,16 @@ fn execute_row_centric(
                     let col_vals = &sub.values[idx_offset..idx_offset + n_hists];
                     let col_ids  = &sub.indices[idx_offset..idx_offset + n_hists];
                     if !is_gt {
+                        #[cfg(not(feature = "kary"))]
                         let h = col_vals.partition_point(|x| x.to_f32() < target);
+                        #[cfg(feature = "kary")]
+                        let h = crate::kary_search::partition_lt_4way_f16(col_vals, target);
                         if h < n_hists { col_ids[h..].to_vec() } else { vec![] }
                     } else {
+                        #[cfg(not(feature = "kary"))]
                         let h = col_vals.partition_point(|x| x.to_f32() <= target);
+                        #[cfg(feature = "kary")]
+                        let h = crate::kary_search::partition_le_4way_f16(col_vals, target);
                         if h > 0 { col_ids[..h].to_vec() } else { vec![] }
                     }
                 }
@@ -648,9 +675,17 @@ fn execute_columnar(
                     #[cfg(not(feature = "batch-search"))]
                     for &(q_idx, target, is_gt) in group {
                         let (h, take_tail) = if !is_gt {
-                            (col_vals.partition_point(|x| x.to_f32() < target), true)
+                            #[cfg(not(feature = "kary"))]
+                            let h_val = col_vals.partition_point(|x| x.to_f32() < target);
+                            #[cfg(feature = "kary")]
+                            let h_val = crate::kary_search::partition_lt_4way_f16(col_vals, target);
+                            (h_val, true)
                         } else {
-                            (col_vals.partition_point(|x| x.to_f32() <= target), false)
+                            #[cfg(not(feature = "kary"))]
+                            let h_val = col_vals.partition_point(|x| x.to_f32() <= target);
+                            #[cfg(feature = "kary")]
+                            let h_val = crate::kary_search::partition_le_4way_f16(col_vals, target);
+                            (h_val, false)
                         };
                         if take_tail {
                             if h < n_hists {

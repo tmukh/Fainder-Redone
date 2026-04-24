@@ -190,11 +190,15 @@ columnar_data = {
 }
 
 cluster_par_data = {
+    # Re-measured 2026-04-24 with --suppress-results fix (previously ran with
+    # result-serialization overhead, producing times in the 500-600s range).
+    # Data points at t=1, t=16, t=64 from minimal rerun. Other thread counts
+    # retained from pre-2026-04-24 runs with --suppress-results.
     "eval_medium": {
         "threads":     [1,     2,     4,     8,     16,    32,    64],
-        "query_par":   [588.1, 580.8, 565.1, 574.4, 568.4, 559.7, 587.3],
-        "cluster_par": [581.6, 578.1, 548.5, 558.6, 573.1, 561.2, 571.8],
-        "python":      732.1,
+        "query_par":   [24.46, 13.07, 7.22, 4.91, 3.73, 4.04, 3.76],
+        "cluster_par": [19.86, 13.52, 7.40, 5.10, 4.20, 7.50, 16.51],
+        "python":      18.27,
     },
 }
 
@@ -448,21 +452,31 @@ def fig9_cluster_par():
     cpar      = d["cluster_par"]
     python    = d["python"]
 
-    fig, ax = plt.subplots(figsize=(7, 4.2))
+    fig, ax = plt.subplots(figsize=(7, 4.3))
 
     ax.axhline(python, color=PYTHON_COL, linestyle="--", lw=1.3,
-               label=f"Python baseline ({python:.0f}s)", alpha=0.7)
+               label=f"Python baseline ({python:.1f}s)", alpha=0.7)
     ax.plot(threads, qpar, color=RUST_COL, marker="o", lw=1.8, ms=6,
             label="query-par (outer par_iter only)")
     ax.plot(threads, cpar, color=GREEN, marker="s", lw=1.8, ms=6,
             label="cluster-par (nested: queries × clusters)")
 
+    # Annotate t=1: cluster-par wins
     ax.annotate(
-        "Both curves identical —\n34× more work units\nmake no difference",
-        xy=(16, (qpar[4] + cpar[4]) / 2),
-        xytext=(24, 450),
-        fontsize=8.5, color="gray",
-        arrowprops=dict(arrowstyle="->", color="gray", lw=1.0),
+        "t=1: cluster-par 1.23× faster\n(cluster-first iter → L1 reuse)",
+        xy=(1, cpar[0]),
+        xytext=(1.5, 14),
+        fontsize=8.5, color=GREEN,
+        arrowprops=dict(arrowstyle="->", color=GREEN, lw=1.0),
+    )
+
+    # Annotate t=64: cluster-par catastrophically slower
+    ax.annotate(
+        "t=64: cluster-par 4.4× slower\n(570k tasks → scheduler overhead)",
+        xy=(64, cpar[-1]),
+        xytext=(10, 17),
+        fontsize=8.5, color=PYTHON_COL,
+        arrowprops=dict(arrowstyle="->", color=PYTHON_COL, lw=1.0),
     )
 
     ax.set_xscale("log", base=2)
@@ -470,10 +484,10 @@ def fig9_cluster_par():
     ax.get_xaxis().set_major_formatter(ticker.ScalarFormatter())
     ax.set_xlabel("Rayon threads")
     ax.set_ylabel("Query execution time (s)")
-    ax.set_title("Cluster-level parallelism ablation — eval\\_medium (10k queries)\n"
-                 "query-par: N\\_q tasks  |  cluster-par: N\\_q × N\\_c tasks (~34× more)")
-    ax.legend()
-    ax.set_ylim(0, python * 1.18)
+    ax.set_title("Cluster-level parallelism ablation — eval\\_medium (10k queries, suppress\\_results=True)\n"
+                 "Regime-dependent: cluster-par helps at t=1, catastrophic at t=64")
+    ax.legend(loc="upper center")
+    ax.set_ylim(0, 25)
     fig.tight_layout()
     save(fig, "fig9_cluster_par_ablation")
 
@@ -1207,6 +1221,87 @@ def fig18_full_pipeline():
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# FIG 19 — 4-way k-ary vs binary partition_point (eval_medium)
+# ═══════════════════════════════════════════════════════════════════════════════
+# Left: thread sweep binary vs kary on f32.
+# Right: compound — f16 alone vs kary+f16, showing they do NOT multiply at t=16.
+kary_data = {
+    "threads": [1, 2, 4, 8, 16, 32, 64],
+    # All measured 2026-04-24, eval_medium, suppress_results=True
+    "binary_f32": [24.30, 13.22, 7.46, 5.10, 3.43, 3.82, 4.09],
+    "kary_f32":   [23.87, 12.91, 7.06, 4.50, 2.87, 3.35, 3.84],
+    "f16":        [24.72, 12.99, 7.40, 5.91, 3.94, 3.44, 3.74],
+    "kary_f16":   [23.60, 13.04, 7.40, 4.67, 4.03, 3.67, 3.58],
+}
+
+def fig19_kary():
+    d = kary_data
+    threads = d["threads"]
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4.5))
+
+    # Left panel: binary vs kary (f32)
+    ax1.plot(threads, d["binary_f32"], color=RUST_COL, marker="o", lw=1.8, ms=6,
+             label="binary (stdlib partition_point)")
+    ax1.plot(threads, d["kary_f32"], color=GREEN, marker="s", lw=1.8, ms=6,
+             label="4-way (--features kary)")
+    # Speedup annotation at peak
+    peak_idx = int(np.argmax([b / k for b, k in zip(d["binary_f32"], d["kary_f32"])]))
+    speedup_peak = d["binary_f32"][peak_idx] / d["kary_f32"][peak_idx]
+    ax1.annotate(
+        f"peak: {speedup_peak:.2f}× at t={threads[peak_idx]}\n(LLC-traffic mechanism)",
+        xy=(threads[peak_idx], d["kary_f32"][peak_idx]),
+        xytext=(30, 8),
+        fontsize=8.5, color=GREEN,
+        arrowprops=dict(arrowstyle="->", color=GREEN, lw=1.0),
+    )
+    ax1.set_xscale("log", base=2)
+    ax1.set_xticks(threads)
+    ax1.get_xaxis().set_major_formatter(ticker.ScalarFormatter())
+    ax1.set_xlabel("Rayon threads")
+    ax1.set_ylabel("Query time (s)")
+    ax1.set_title("Binary vs 4-way search (f32) — eval\\_medium")
+    ax1.legend()
+    ax1.set_ylim(0, 27)
+
+    # Right panel: compound — f16 alone vs kary+f16
+    ax2.plot(threads, d["f16"], color=RUST_COL, marker="o", lw=1.8, ms=6,
+             label="f16 alone (--features f16)")
+    ax2.plot(threads, d["kary_f16"], color=GREEN, marker="s", lw=1.8, ms=6,
+             label="kary + f16 (--features 'kary f16')")
+    ax2.annotate(
+        "t=8: 1.27× compound\n(both relieve LLC pressure)",
+        xy=(8, d["kary_f16"][3]),
+        xytext=(1.5, 10),
+        fontsize=8.5, color=GREEN,
+        arrowprops=dict(arrowstyle="->", color=GREEN, lw=1.0),
+    )
+    ax2.annotate(
+        "t=16: 0.98× (no compound)\nf16 already relieved LLC",
+        xy=(16, d["kary_f16"][4]),
+        xytext=(20, 10),
+        fontsize=8.5, color=PYTHON_COL,
+        arrowprops=dict(arrowstyle="->", color=PYTHON_COL, lw=1.0),
+    )
+    ax2.set_xscale("log", base=2)
+    ax2.set_xticks(threads)
+    ax2.get_xaxis().set_major_formatter(ticker.ScalarFormatter())
+    ax2.set_xlabel("Rayon threads")
+    ax2.set_ylabel("Query time (s)")
+    ax2.set_title("Compound: f16 alone vs.\\ kary + f16")
+    ax2.legend()
+    ax2.set_ylim(0, 27)
+
+    fig.suptitle(
+        "4-way k-ary search — eval\\_medium (10k queries, suppress\\_results=True)\n"
+        "Peak 1.19× vs binary f32 at t=16 (LLC-traffic reduction).  "
+        "Does NOT compound with f16 — both target shared-LLC pressure.",
+        fontsize=10.5, y=1.03,
+    )
+    fig.tight_layout()
+    save(fig, "fig19_kary")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # RESULTS.md
 # ═══════════════════════════════════════════════════════════════════════════════
 def write_results_md():
@@ -1350,6 +1445,7 @@ if __name__ == "__main__":
     fig16_serialization()
     fig17_rebinning()
     fig18_full_pipeline()
+    fig19_kary()
     write_results_md()
     print(f"\nAll figures → {OUT.resolve()}")
     print("Results doc → RESULTS.md")
