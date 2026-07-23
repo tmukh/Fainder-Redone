@@ -1,0 +1,4 @@
+# Compile for the actual host CPU (Sapphire Rapids on this server).
+# This unlocks AVX2, AVX-512, BMI2, FMA, and CPU-specific tuning.
+[build]
+rustflags = ["-C", "target-cpu=native"]

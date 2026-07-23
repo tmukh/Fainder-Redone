@@ -1,0 +1,52 @@
+[package]
+name = "fainder"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "fainder_core"
+crate-type = ["cdylib"]
+
+[features]
+# Default: Structure-of-Arrays layout (cache-efficient binary search over values[])
+# Enable "aos" to switch to Array-of-Structs for ablation comparison:
+#   maturin develop --release --features aos
+aos = []                # Array-of-Structures layout (kept as documented negative result, §3.2)
+cluster-par = []        # Nested cluster-level parallelism — kept as documented negative result (§3.4: up to 3.7× slower)
+f16 = ["dep:half"]      # Store percentile values as f16 — halves index memory footprint
+simd = []               # AVX2-vectorized binary search (f32 SoA only) — kept as negative result, §3.1
+batch-search = []       # 8-way interleaved binary search — column-centric only, kept as negative result, §3.5.3
+pooled = []             # Pre-allocated per-query output buffer (avoids flat_map+collect Vec churn)
+pin-cores = ["dep:core_affinity"]  # Pin Rayon workers to distinct physical cores, avoid SMT siblings
+cluster-prefetch = []   # Software-pipelined _mm_prefetch of cluster c+1 while processing cluster c
+mimalloc = ["dep:mimalloc"]  # Replace glibc malloc with Microsoft mimalloc (per-thread sharded free lists)
+horizontal-simd = []    # AVX-512 horizontal vectorisation: 16 queries in lockstep through bisection (Polychroniou et al. 2015)
+pgm = []                # PGM-index learned-index acceleration (Ferragina & Vinciguerra, PVLDB 2020) — replaces binary-search dependent-load chain with O(1) segment lookup + ε-bounded local scan
+packed-ids = []         # Per-cluster bit-packed histogram IDs (ceil(log2(cluster_size)) bits per ID) — bandwidth attack on the emit-IDs phase
+local-ids = []          # Per-cluster LOCAL IDs (0..n_hists) bit-packed at log2(n_hists+1) ≈ 13 bits, with per-cluster local→global lookup table consulted at emit time. Refines packed-ids by ~7 bits/id on the read side; output writeback to Vec<u32> still 32 bits, so emit-phase BW saving capped at ~13% on top of packed-ids.
+local-ids-bench = []    # Same packing as local-ids but extend_ids emits LOCAL IDs verbatim (no lookup). Suppress-mode-correct only — produces wrong global IDs in with-results mode. Diagnostic build to bound the lookup-overhead cost separately from the bandwidth saving (see §3.11).
+local-ids-noalloc = []  # Same as local-ids-bench (13-bit packing, no lookup) but local_to_global table is NOT allocated. Disambiguates whether the multi-thread regression seen on local-ids-bench is from (a) the 13-bit decoder loop itself, or (b) the resident local_to_global allocation pressuring TLB / L3.
+query-batch = []        # Hybrid engine: par over K-query batches, cluster-as-outer-loop within batch — amortises cluster cold-load across K queries (work-unit-size axis attack)
+morsel = ["dep:crossbeam-deque"]  # Morsel-driven scheduler (Bandle/Giceva VLDB 2021) — phase-aligned dispatch, LPT-sorted cluster-phase queue, per-worker Chase-Lev deques, adaptive grain (~500µs target, ≥100µs clamp)
+
+[build-dependencies]
+cc = "1.0"
+
+[dependencies]
+pyo3 = { version = "0.22.0", features = ["extension-module", "abi3-py310"] }
+numpy = "0.22.0"
+rayon = "1.10.0"
+thiserror = "1.0"
+log = "0.4"
+env_logger = "0.11"
+half = { version = "2.4", optional = true }
+ndarray = "0.16"
+core_affinity = { version = "0.8", optional = true }
+mimalloc = { version = "0.1", default-features = false, optional = true }
+crossbeam-deque = { version = "0.8", optional = true }
+
+# Profiling profile: optimised but keeps debug info for perf annotate.
+[profile.profiling]
+inherits = "release"
+debug = "line-tables-only"
+strip = false
