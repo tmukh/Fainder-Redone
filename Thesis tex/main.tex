@@ -1,0 +1,210 @@
+
+\documentclass[a4paper, 12pt, oneside, BCOR1cm,toc=chapterentrywithdots,hidelinks]{scrbook}
+
+\usepackage[a4paper]{geometry}
+\usepackage{textcomp}
+\usepackage{longtable}
+%\usepackage{tabu}
+\usepackage{enumitem}
+\usepackage[ngerman, english]{babel}
+\usepackage[utf8]{inputenc}
+\usepackage{graphicx} 
+\usepackage{acronym}
+\usepackage{url}           	 
+\usepackage{hyperref} 	
+\usepackage{listings, color}	% for source code
+\usepackage{scrlayer-scrpage}	% header and footer line
+\usepackage{acronym}
+\usepackage[ruled,vlined,algochapter]{algorithm2e}
+\usepackage{tocbibind}
+\usepackage{blindtext}
+\usepackage{titling}
+\usepackage{amsmath}
+
+
+\usepackage{chngcntr}
+\counterwithout{figure}{chapter}
+\counterwithout{table}{chapter}
+\counterwithout{algocf}{chapter} 
+%\counterwithout{lstlisting}{chapter}
+\AtBeginDocument{% the counter is defined later
+  \counterwithout{lstlisting}{chapter}%
+}
+\renewcommand\lstlistingname{Code Fragment}
+\newcommand{\bcombo}{\texttt{best-combo}}
+\emergencystretch=3em % absorb minor overfull hboxes from long \texttt tokens
+
+%for adding comments
+\usepackage{verbatim}
+
+% for tables
+\usepackage{multirow}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage[table]{xcolor}
+\usepackage{xcolor}
+\usepackage{float}   % provides the [H] specifier for in-flow (non-floating) tables/figures
+
+% Diagrams
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning, shapes.geometric, backgrounds, fit, decorations.pathreplacing, calligraphy}
+
+% Better code listings (Rust-aware)
+\lstdefinelanguage{rust}{
+  keywords={fn, let, mut, pub, struct, impl, trait, enum, match, if, else, for, while, loop, return, use, mod, crate, self, Self, as, in, where, unsafe, move, ref, const, static, true, false, Some, None, Ok, Err},
+  keywordstyle=\color{blue!70!black}\bfseries,
+  ndkeywords={usize, i32, u32, f32, f64, u8, bool, Vec, str, String, Option, Result},
+  ndkeywordstyle=\color{purple!70!black},
+  sensitive=true,
+  comment=[l]{//},
+  morecomment=[s]{/*}{*/},
+  commentstyle=\color{gray!70!black}\itshape,
+  stringstyle=\color{green!50!black},
+  morestring=[b]",
+}
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  numbers=left,
+  numberstyle=\tiny\color{gray},
+  breaklines=true,
+  frame=single,
+  framerule=0.4pt,
+  rulecolor=\color{gray!30},
+  xleftmargin=1.5em,
+  columns=fullflexible,
+  showstringspaces=false,
+  captionpos=b,
+}
+
+% header and footer line - no header & footer line on pages where a new chapter starts
+\pagestyle{scrheadings}
+% TU Berlin logo at header
+\chead{\includegraphics[width=1.2cm]{./img/TU-Berlin-Logo.pdf}
+}
+
+
+
+\newcommand{\tTitle}{Hardware-conscious Performance Engineering for Distribution-Aware Dataset Search}
+\newcommand{\tSubtitle}{A Re-examination of Fainder for hardware-near optimization}
+\newcommand{\tAuthor}{Tarik Abu Mukh}
+\newcommand{\tMatknr}{0501953}
+\newcommand{\tEmail}{t.abu.mukh@campus.tu-berlin.de}
+\newcommand{\tDegreeProgramme}{Computer Science}
+\newcommand{\tDegreeType}{Master's}
+\newcommand{\tPrimaryReviewer}{Prof. Dr. Volker Markl}
+\newcommand{\tSecondaryReviewers}{Prof. Dr. Matthias Bohm}
+\newcommand{\tAdvisors}{Lennart Behme}
+
+
+
+
+\usetikzlibrary{arrows.meta, positioning, shapes.geometric, backgrounds, fit, decorations.pathreplacing, calligraphy}
+\begin{document}
+
+\frontmatter
+
+%Titlepage
+\include{./misc/Titlepage}
+\thispagestyle{empty}
+\cleardoublepage
+    
+%Self-assertion
+%\include{./misc/Self-assertion.de} % choose either this...
+\include{./misc/Self-assertion.en} % ...or this
+\include{./misc/declaration-of-aids}
+\thispagestyle{empty}
+\cleardoublepage
+
+% Abstract in Deutsch
+\addchap*{Zusammenfassung}
+\input{misc/Abstract_deutsch}
+
+% Abstract
+\addchap*{Abstract}
+\input{misc/Abstract}
+  
+% Acknowledgments  
+\addchap*{Acknowledgments}
+\input{misc/Acknowledgment}
+
+%table of contents
+\addtocontents{toc}{\protect\setcounter{tocdepth}{-1}}
+\tableofcontents
+\addtocontents{toc}{\protect\setcounter{tocdepth}{3}}
+
+%footnote
+\newcommand\blfootnote[1]{%
+  \begingroup
+  \renewcommand\thefootnote{}\footnote{#1}%
+  \addtocounter{footnote}{-1}%
+  \endgroup
+}
+
+%list of figures
+\listoffigures
+
+%list of tables
+\listoftables
+
+
+
+    
+
+    
+
+% List of Abbreviations
+\onecolumn
+\addchap{List of Abbreviations}
+\begin{acronym}[MSHR]
+ \acro{AoS}{Array of Structs}
+ \acro{AVX}{Advanced Vector Extensions}
+ \acro{BFS}{Breadth-First Search}
+ \acro{CI}{Confidence Interval}
+ \acro{CMOV}{Conditional Move (instruction)}
+ \acro{DIMA}{Database Systems and Information Management}
+ \acro{DRAM}{Dynamic Random-Access Memory}
+ \acro{dTLB}{Data Translation Lookaside Buffer}
+ \acro{FFI}{Foreign Function Interface}
+ \acro{GC}{Garbage Collector}
+ \acro{GIL}{Global Interpreter Lock}
+ \acro{HT}{Hyper-Threading}
+ \acro{IPC}{Instructions Per Cycle}
+ \acro{LLC}{Last-Level Cache}
+ \acro{MSHR}{Miss Status Holding Register}
+ \acro{NUMA}{Non-Uniform Memory Access}
+ \acro{OOD}{Out-of-Distribution}
+ \acro{PGM}{Piecewise Geometric Model (learned index)}
+ \acro{PMU}{Performance Monitoring Unit}
+ \acro{ROB}{Reorder Buffer}
+ \acro{SIMD}{Single Instruction, Multiple Data}
+ \acro{SMT}{Simultaneous Multithreading}
+ \acro{SoA}{Structure of Arrays}
+ \acro{TLB}{Translation Lookaside Buffer}
+ \acro{UPI}{Ultra-Path Interconnect}
+\end{acronym}
+\onecolumn
+
+\mainmatter % comment single chapters for faster compilation
+    
+    \input{./chapters/1Introduction.tex}
+    \input{./chapters/2Sci_background.tex}
+    \input{./chapters/3Methodology.tex}
+    \input{./chapters/4Experimental.tex}
+    \input{./chapters/5Related_work.tex}
+    \input{./chapters/6Conclusion.tex}
+
+% ---------------------------------------------------------------
+
+%Bibliography
+\begingroup
+\raggedright
+\bibliographystyle{splncs03}
+%\bibliographystyle{acm}
+\bibliography{bibliography}
+\endgroup
+
+%appendix
+\input{./misc/Annex}
+
+\end{document}

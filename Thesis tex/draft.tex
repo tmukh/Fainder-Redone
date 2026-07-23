@@ -1,0 +1,157 @@
+% draft.tex — first-two-chapters preview build.
+% Identical preamble + frontmatter to main.tex, but only \input's
+% chapters 1 (Introduction) and 2 (Scientific Background), and skips
+% the appendix. Cross-references to later chapters will still typeset
+% as `?` since those chapters are excluded — that's expected.
+% Build with the same recipe:
+%   pdflatex draft.tex
+%   bibtex   draft
+%   pdflatex draft.tex
+%   pdflatex draft.tex
+
+\documentclass[a4paper, 12pt, oneside, BCOR1cm,toc=chapterentrywithdots,hidelinks]{scrbook}
+
+\usepackage[a4paper]{geometry}
+\usepackage{textcomp}
+\usepackage{longtable}
+\usepackage{enumitem}
+\usepackage[ngerman, english]{babel}
+\usepackage[utf8]{inputenc}
+\usepackage{graphicx}
+\usepackage{acronym}
+\usepackage{url}
+\usepackage{hyperref}
+\usepackage{listings, color}
+\usepackage{scrlayer-scrpage}
+\usepackage{acronym}
+\usepackage[ruled,vlined,algochapter]{algorithm2e}
+\usepackage{tocbibind}
+\usepackage{blindtext}
+\usepackage{titling}
+\usepackage{amsmath}
+
+\usepackage{chngcntr}
+\counterwithout{figure}{chapter}
+\counterwithout{table}{chapter}
+\counterwithout{algocf}{chapter}
+\AtBeginDocument{%
+  \counterwithout{lstlisting}{chapter}%
+}
+\renewcommand\lstlistingname{Code Fragment}
+
+\usepackage{verbatim}
+
+\usepackage{multirow}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage[table]{xcolor}
+\usepackage{xcolor}
+
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning, shapes.geometric, backgrounds, fit, decorations.pathreplacing, calligraphy}
+
+\lstdefinelanguage{rust}{
+  keywords={fn, let, mut, pub, struct, impl, trait, enum, match, if, else, for, while, loop, return, use, mod, crate, self, Self, as, in, where, unsafe, move, ref, const, static, true, false, Some, None, Ok, Err},
+  keywordstyle=\color{blue!70!black}\bfseries,
+  ndkeywords={usize, i32, u32, f32, f64, u8, bool, Vec, str, String, Option, Result},
+  ndkeywordstyle=\color{purple!70!black},
+  sensitive=true,
+  comment=[l]{//},
+  morecomment=[s]{/*}{*/},
+  commentstyle=\color{gray!70!black}\itshape,
+  stringstyle=\color{green!50!black},
+  morestring=[b]",
+}
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  numbers=left,
+  numberstyle=\tiny\color{gray},
+  breaklines=true,
+  frame=single,
+  framerule=0.4pt,
+  rulecolor=\color{gray!30},
+  xleftmargin=1.5em,
+  columns=fullflexible,
+  showstringspaces=false,
+  captionpos=b,
+}
+
+\pagestyle{scrheadings}
+\chead{\includegraphics[width=1.2cm]{./img/TU-Berlin-Logo.pdf}}
+
+\newcommand{\tTitle}{Hardware-conscious Performance Engineering for Distribution-Aware Dataset Search}
+\newcommand{\tSubtitle}{A Re-examination of Fainder for hardware-near optimization}
+\newcommand{\tAuthor}{Tarik Abu Mukh}
+\newcommand{\tMatknr}{0501953}
+\newcommand{\tEmail}{t.abu.mukh@campus.tu-berlin.de}
+\newcommand{\tDegreeProgramme}{Computer Science}
+\newcommand{\tDegreeType}{Master's}
+\newcommand{\tPrimaryReviewer}{Prof. Dr. Volker Markl}
+\newcommand{\tSecondaryReviewers}{Prof. Dr. Rieck}
+\newcommand{\tAdvisors}{Lennart Behme}
+
+\usetikzlibrary{arrows.meta, positioning, shapes.geometric, backgrounds, fit, decorations.pathreplacing, calligraphy}
+\begin{document}
+
+\frontmatter
+
+\include{./misc/Titlepage}
+\thispagestyle{empty}
+\cleardoublepage
+
+\include{./misc/Self-assertion.en}
+\include{./misc/declaration-of-aids}
+\thispagestyle{empty}
+\cleardoublepage
+
+\addchap*{Zusammenfassung}
+\input{misc/Abstract_deutsch}
+
+\addchap*{Abstract}
+\input{misc/Abstract}
+
+\addchap*{Acknowledgments}
+\input{misc/Acknowledgment}
+
+\addtocontents{toc}{\protect\setcounter{tocdepth}{-1}}
+\tableofcontents
+\addtocontents{toc}{\protect\setcounter{tocdepth}{3}}
+
+\newcommand\blfootnote[1]{%
+  \begingroup
+  \renewcommand\thefootnote{}\footnote{#1}%
+  \addtocounter{footnote}{-1}%
+  \endgroup
+}
+
+\listoffigures
+\listoftables
+
+\onecolumn
+\addchap{List of Abbreviations}
+\begin{acronym}[Bash]
+ \acro{DIMA}{Database Systems and Information Management}
+\end{acronym}
+\onecolumn
+
+\listofalgorithms
+\addcontentsline{toc}{chapter}{List of Algorithms}
+
+\mainmatter
+
+    \input{./chapters/1Introduction.tex}
+    \input{./chapters/2Sci_background.tex}
+
+% ---------------------------------------------------------------
+% Chapters 3–6 and the appendix are intentionally excluded from this
+% draft build. Cross-references from Ch1/Ch2 into later chapters will
+% render as `?` — that is expected.
+% ---------------------------------------------------------------
+
+\begingroup
+\raggedright
+\bibliographystyle{splncs03}
+\bibliography{bibliography}
+\endgroup
+
+\end{document}

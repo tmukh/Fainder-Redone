@@ -1,0 +1,454 @@
+\chapter{Methodology\label{cha:chapter3}}
+This chapter documents the experimental methodology for the results produced in Chapter~\ref{cha:chapter4}. Unlike Chapter~\ref{cha:chapter2}, which describes the concepts and techniques used in the ablation study, this chapter gives the concrete hardware and software configuration, the Rust engine's implementation architecture, and the measurement protocol for the reported numbers. In addition, we also describe all a-priori hypotheses that each experiment tests.
+
+The main drive of this chapter is \emph{reproducibility}: a reader with the same hardware, source data, and scripts should be able to reproduce every table and figure from Chapter~\ref{cha:chapter4} within the reported $95\%$ confidence intervals.
+
+\section{Experimental Setup\label{sec:method:setup}}
+
+\subsection{Reproducibility}
+
+All measurement scripts, the Rust engine source code, and the raw measurement database are archived in the accompanying artefact, available at \url{https://github.com/tmukh/Fainder-Redone}. A companion set of walkthrough notebooks reproduces every table and figure in Chapter~\ref{cha:chapter4} directly from the measurement database.
+
+\subsection{Hardware\label{sec:method:hw}}
+
+The hardware configuration is as follows
+\begin{itemize}
+    \item \textbf{CPU:} 2$\times$ Intel Xeon Platinum 8468H (Sapphire Rapids-SP), 96 physical cores, 192 logical cores, 105\,MiB L3 cache per socket, 48\,KiB L1d and 2\,MiB L2 caches per core, AVX-512 including AVX-512\_FP16.
+    \item \textbf{Memory:} 1\,TB DDR5-4800, 8 channels per socket, $\sim\!300$\,GB/s per-socket peak bandwidth, $\sim\!600$\,GB/s aggregate.
+    \item \textbf{Interconnect:} Ultra-Path Interconnect (UPI) between sockets, NUMA distance $10$ for local access, $21$ for cross-socket access ($\sim\!2.1\times$ latency penalty on remote loads).
+    \item \textbf{NUMA topology:} two nodes, one per socket. Node~0 holds logical CPUs $0$--$47$ with SMT siblings $96$--$143$; node~1 holds $48$--$95$ with siblings $144$--$191$.
+    \item \textbf{Storage:} NVMe SSD (dataset loads) and a RAM-backed tmpfs at \texttt{/dev/shm}.
+    \item \textbf{Operating System:} Ubuntu 22.04.5 LTS, Linux kernel 5.15.0-176-generic, glibc 2.35.
+\end{itemize}
+
+The Rayon thread pool for the thread-count sweeps in Chapter~\ref{cha:chapter4} is set explicitly via \texttt{FAINDER\_NUM\_THREADS}. Thread counts up to $48$ fit within one NUMA node's physical core budget, and $64$ and above span both sockets, which requires UPI traffic. This clearly separates the NUMA experiment of Chapter~\ref{cha:chapter4} from the fourth ceiling.
+
+\subsection{Software\label{sec:method:sw}}
+
+The software configuration is as follows:
+
+\begin{itemize}
+    \item \textbf{Rust:} 1.94.1 (stable, LLVM 21.1.8), compiled with \texttt{rustc} in release mode with target-specific tuning for Sapphire Rapids.
+    \item \textbf{Cargo:} 1.94.1, used to manage the Rust engine's build and feature flags.
+    \item \textbf{Maturin:} 1.7, used to compile and install the Rust engine as a PyO3 extension into the active virtualenv.
+    \item \textbf{Python:} 3.10.12 with NumPy 1.26.4, used to run the reference Fainder implementation and orchestrate the benchmarking scripts.
+    \item \textbf{Fainder:} The reference implementation of Fainder~\cite{behme_2024}, used as the baseline for performance comparisons.
+    \item \textbf{Benchmarking Scripts:} Custom Python scripts to automate the execution of benchmarks, collect performance data, and store results in a SQLite database.
+    \item \textbf{Performance Counters:} \texttt{perf} tool to collect hardware performance counters during benchmark runs.
+    \item \textbf{Data Compression:} \texttt{zstd} for compressing and decompressing query files.
+\end{itemize}
+
+\subsection{Datasets and Queries\label{sec:method:data}}
+
+Both the original Fainder paper and this thesis make use of the \emph{GitTables}~\cite{hulsebos_2023} corpus, a public collection of $\sim\!1$M tables ($\sim\!120$M columns) extracted from public GitHub CSV repositories. After filtering to numeric columns with $\geq 100$ rows, the subset used in this thesis contains $5{,}017{,}619$ histograms.
+
+From this corpus we derive four datasets, all through the same pipeline:
+\begin{description}
+    \item[] histogram extraction $\to$ MiniBatchKMeans clustering $\to$ per-cluster rebinning to a shared bin grid.
+\end{description}
+
+The derivation process is as follows:
+\begin{enumerate}
+  \item Using K-means, histograms are clustered into $k = 256$ clusters, and all histograms are rebinned to a fixed bin count of $256$, producing the \texttt{c256\_56gb} dataset.
+  \item Subsequently, we use clustering again to cluster the histograms into $k = 1024$ clusters, and rebin each histogram into a bin count of $1024$. This produces the \texttt{c1024\_56gb} dataset.
+  \item Lastly, to create the \texttt{c256\_30gb} and \texttt{c256\_10gb} datasets, we sub-sample the corpus down to $\sim\!30$\,GB and $\sim\!10$\,GB of raw data ($996{,}632$ and $323{,}719$ histograms), and re-do the K-means clustering and rebinning to $k = 256$ clusters and a fixed bin count of $256$.
+\end{enumerate}
+
+In the naming convention, the first number is the K-means target $k$, and the second number is the approximate size of the dataset in gigabytes. The variation between these datasets is two-fold, one is the total number of histograms, and the other is the \emph{effective} number of clusters. Note that the target cluster count $k$ is not the number of clusters actually populated in the index: some clusters may be empty, and small clusters may be merged. The populated count, reported as ``effective clusters'' in Table~\ref{tab:method:datasets}, is the one used at query time.
+ 
+
+\begin{table}[H]
+\centering
+\caption{The four calibration and OOD datasets. The primary workload is \texttt{c256\_56gb} on which the findings are established. \texttt{c1024\_56gb} is the out-of-distribution density point (§\ref{sec:exp:ood}). \emph{Raw Parquet} is the source data size, \emph{per-cluster f32} the working-set footprint of a single cluster's column slice at f32 precision.}
+\label{tab:method:datasets}
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{lrrrrrrl}
+\toprule
+Dataset & Raw Parquet & $n_{\text{hists}}$ & $K_{\text{target}}$ & $K_{\text{eff}}$ & hists/cluster & per-cluster f32 & Role \\
+\midrule
+\texttt{c256\_10gb}  & $\sim$10\,GB & 323\,719  & 256  & 129 & $\sim$2.5\,K & $\sim$10\,KiB (L1d)   & small scale  \\
+\texttt{c256\_30gb}  & $\sim$30\,GB & 996\,632  & 256  & 184 & $\sim$5.4\,K & $\sim$22\,KiB (L1d)   & medium       \\
+\texttt{c256\_56gb}  & $\sim$56\,GB & 5\,017\,619 & 256 & 191 & $\sim$26\,K  & $\sim$105\,KiB ($>$L1d) & primary      \\
+\texttt{c1024\_56gb} & $\sim$56\,GB & 5\,017\,619 & 1024 & 610 & $\sim$8.2\,K & $\sim$33\,KiB (L1d)   & OOD (§\ref{sec:exp:ood}) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The query workload is a fixed set of $10{,}000$ \emph{(percentile, op, threshold)} tuples of the form $(p, \text{op}, \tau)$ with $p \in [0,1]$, $\text{op} \in \{<, >\}$, and $\tau \in [\text{domain min}, \text{domain max}]$, sampled from the query workload used in the original Fainder paper and shared across all four datasets so the query characteristics are constant. Queries are dataset-independent: no column IDs appear in the query schema.
+
+
+\section{Rust Engine Implementation\label{sec:method:impl}}
+
+In this section we describe the implementation of the concepts from Chapter~\ref{cha:chapter2} into Rust source code, sufficiently enough for readers to interpret the ablation labels in the Chapter~\ref{cha:chapter4}. This section should not be considered an exhaustive overview of the codebase, that can be found in the accompanying artefact (§\ref{sec:method:setup}). Instead, we focus on the architectural decisions that lead us to determine which measurements are meaningful and which cargo features they map to.
+
+\subsection{Engine Architecture\label{sec:method:impl:arch}}
+
+The index is loaded only once, through a memory-mapped flat binary file (§\ref{sec:method:impl:serial}). Query batches are answered through the Rayon work-stealing scheduler. A query batch is a Python-side \texttt{Vec<PercentileQuery>}, and its results are collected into a Python-side \texttt{Vec<Vec<u32>>} of matching histogram identifiers per query. By default, the row-centric engine spawns one Rayon task per \emph{query} and processes clusters sequentially inside each task (\texttt{par\_iter} over queries). Feature-gated variants swap this out for column-centric iteration (§\ref{sec:method:impl:columnar}), K-query batch amortisation (§\ref{sec:method:impl:qbatch}), or morsel-driven dynamic dispatch (§\ref{sec:method:impl:morsel}), each of which inverts the loop order so clusters become the outer dimension.
+
+\subsection{Cargo Feature Flags\label{sec:method:cargo}}
+
+Each ablation is mapped onto one or more Cargo feature flags. In table~\ref{tab:method:cargo} we list the flags that appear in the bench.db labels. An absence of flags denotes the \texttt{default} build: SoA layout, scalar \texttt{partition\_point}, glibc allocator and no thread pinning.
+
+\begin{table}[H]
+\centering
+\caption{Cargo feature flags exercised in the ablation matrix. Each flag targets a specific ceiling, the mapping is documented in §\ref{sec:method:hypotheses}.}
+\label{tab:method:cargo}
+\footnotesize
+\begin{tabular}{l>{\raggedright\arraybackslash}p{8.2cm}}
+\toprule
+Flag & Effect \\
+\midrule
+(default)              & SoA layout, scalar \texttt{partition\_point}, glibc malloc \\
+\texttt{simd}          & AVX-512 leaf-stage compare in the binary-search inner loop \\
+\texttt{f16}           & Percentile values stored as f16 (half-precision), halves index size \\
+\texttt{aos}           & Array-of-Structs layout (negative control for L3 pressure) \\
+\texttt{packed-ids}    & Per-cluster bit-packed identifiers, $\lceil\log_2(\max\_\text{id}+1)\rceil$ bits \\
+\texttt{pooled}        & Preallocated per-query output buffer, no \texttt{flat\_map+collect} \\
+\texttt{pin-cores}     & Rayon workers pinned to distinct physical cores (avoids SMT siblings) \\
+\texttt{cluster-prefetch} & Software \texttt{\_mm\_prefetch} for cluster $c{+}1$ while $c$ processes \\
+\texttt{mimalloc}      & mimalloc allocator with per-thread sharded free-lists \\
+\texttt{query-batch}   & Column-centric inner loop within K-query batches (K per env var, default 64) \\
+\texttt{morsel}        & Phase-aligned cooperative-caching scheduler (Chase--Lev) \\
+\texttt{local-ids}, \texttt{-bench}, \texttt{-noalloc} & Per-cluster identifier reindexing (three mutually-exclusive variants; §\ref{sec:method:impl:packed}) \\
+\texttt{horizontal-simd} & AVX-512 over 16 queries in lockstep (Polychroniou-style) \\
+\texttt{pgm}           & Learned-index acceleration of binary search \\
+\bottomrule
+\end{tabular}
+
+\vspace{0.5em}
+\noindent The composed build \bcombo{} is not a Cargo feature but a build-preset shorthand for the combination \texttt{--features "pooled f16 simd pin-cores cluster-prefetch mimalloc"} (the integrated optimum used throughout Chapter~\ref{cha:chapter4}; named \texttt{bestofsuite} in the artefact and in the measurement-database labels).
+\end{table}
+
+\subsection{Layout and Search Variants\label{sec:method:impl:variants}}
+
+The concepts of SoA, AoS, and SIMD are introduced in Chapter~\ref{cha:chapter2}. Below we describe the implementation of each as a Cargo-feature-gated variant of the \texttt{SubIndex} struct and the leaf-stage binary-search function. The Eytzinger BFS layout and the 4-way branchless k-ary search were part of an earlier campaign; both were dropped from the final integrated build and are not part of the final measurement campaign.
+
+The default build's SoA's \texttt{SubIndex} is column-major: so for a cluster with $n$ histograms and $b$ bin boundaries, the array of values hold $n \times b$ f32 values, so that all values for boundary $k$ occupy the slice \texttt{values[k*n .. (k+1)*n]}, and the array of identifiers is separate.
+
+\begin{verbatim}
+pub struct SubIndex {
+    pub values:  Vec<f32>,  // column-major
+    pub indices: Vec<u32>,  // same layout as values
+}
+\end{verbatim}
+
+
+The binary-search predicate reads only from the \texttt{values} slice and identifiers are touched once at emit time to collect the matching histogram IDs.
+
+The following Cargo feature flags implement layout variants:
+\begin{itemize}
+    \item \texttt{aos}, replaces \texttt{SubIndex} with an AoS layout: \texttt{Vec<(f32,u32)>} interleaved value-ID pairs.
+    \item \texttt{f16}, replaces \texttt{values: Vec<f32>} with \texttt{values: Vec<half::f16>}, with on-the-fly dequantisation via \texttt{x.to\_f32()}.
+\end{itemize}
+
+Since all these variants implement the same trait, the outer engine code is unchanged, the compile-time feature selection swaps the concrete \texttt{SubIndex} type.
+
+Rust's \texttt{slice::partition\_point} is the binary search itself. It's a branchless variant that can be equated (semantically) to NumPy's \texttt{searchsorted} with \texttt{side="left"}. The binary search, like the index, has feature flags as well:
+
+\begin{itemize}
+    \item \texttt{simd}, replaces the last $\sim\!16$ iterations of \texttt{partition\_point} with one AVX-512 vector comparison: \texttt{\_mm512\_cmp\_ps\_mask} (predicate \texttt{\_CMP\_LT\_OQ}) for f32 and \texttt{\_mm512\_cmplt\_epu16\_mask} on reinterpreted f16 bits.
+    \item \texttt{horizontal-simd}, implements the Polychroniou-style~\cite{polychroniou_2014} multi-probe: 16 queries traverse their bisection trees in tandem through one column, sharing prefix loads.
+    \item \texttt{batch-search}, interleaves eight serial searches on the same column so that later-stage independent loads pipeline through the CPU's Miss Status Holding Registers.
+    \item \texttt{pgm}, instead of a load chain that is dependent on the previous comparison, the search now becomes a piece-wise linear segment lookup plus a local scan. The PGM segments are built once when the index is loaded, and stored alongside the column. If the hardware does not support AVX-512, the search falls back to the scalar variant.
+\end{itemize}
+
+If a query's reference value falls outside the cluster's bin-edge range, the search returns \texttt{bin\_idx = 0} or \texttt{bin\_idx = n\_bins}, and the inner loop short-circuits to \texttt{cluster\_all\_ids(c)} or \texttt{vec![]} without any binary search. This edge case caused a precision/recall bug in early versions and is now covered by the correctness gate (§\ref{sec:correctness}).
+
+\subsection{Column-Centric Engine\label{sec:method:impl:columnar}}
+
+In the default row-centric engine, queries are the outer parallel loop and clusters are the sequential inner loop within each Rayon task. This means that for each query, the engine iterates over all clusters, loading each cluster's bin edges and column slice into L1/L2 cache. When the next query is processed, the previously loaded cluster data may have been evicted from cache, leading to repeated cache misses and increased memory latency. The column-centric engine is selected by setting the environment variable \texttt{FAINDER\_COLUMNAR=1}. The engine inverts the loop order, making clusters the outer parallel dimension and queries the inner loop, leading to better cache locality, as all queries for a given cluster can be processed while that cluster's data remains in cache.
+
+The four inner steps are as follows:
+
+\begin{enumerate}
+    \item Pre-compute $k^*$ for each query on this cluster.
+    \item Group queries by $k^*$ and sort within-group by operator.
+    \item For each bin-index group, run a binary search over \texttt{values[k*n .. (k+1)*n]} for all queries in the group sequentially so the column slice stays L2-warm.
+    \item Write per-query match counts and flat result arrays into a cluster-owned buffer with a separate offsets array.
+\end{enumerate}
+
+If we use a flat buffer for the output, we avoid the row-centric default's $N_\text{queries}$ small allocations per cluster, instead we allocate \texttt{Vec<u32>} per cluster plus an offsets vector. Since \texttt{batch-search} only makes sense when consecutive searches actually hit the same column slice, the \texttt{--features batch-search} SIMD variant is meaningful only in the column-centric engine.
+
+At query-invocation time, the engine-selection check reads the \texttt{columnar} boolean (driven by \texttt{FAINDER\_COLUMNAR}) and the compile-time presence of the \texttt{query-batch} / \texttt{morsel} features to select the appropriate engine, ensuring that exactly one engine handles any given \texttt{run\_queries} call. (A separate routing component performs a different, finer-grained job: per-(query, cluster) route computation for early pruning and trivially-all short-circuits.) The engine-selection mechanism exists because the regime grid does not have a single dominating engine across all scenarios. The deployment recipe (§\ref{sec:exp:dispatch}) picks the engine at the time the workload is dispatched, not at compile time.
+
+\subsection{Query-Batch Engine\label{sec:method:impl:qbatch}}
+
+Due to the columnar engine's reuse of a cluster's column slice within one outer task, once a thread advances to the next cluster, that data is gone. With \texttt{--features query-batch} we keep the row-centric strength of parallelism, but also group consecutive queries into batches of size $K$ and amortise each cluster col-load across all $K$ queries in the batch.
+
+Over the query list, the outer parallel iterator is now \texttt{par\_chunks}, instead of \texttt{par\_iter()} over individual queries. We now invert the loop order inside each chunk to cluster-outer + queries-inner: worker visits cluster $c$ $\to$ run all queries against $c$ while bin-edges and column slice are cache-warm $\to$ advance to cluster $c{+}1$. The batch size parameter defaults to $K{=}64$ and can be overridden via \texttt{FAINDER\_QUERY\_BATCH}. The sweep range for the experiments is shown in §\ref{sec:exp:wf}.
+
+Correctness is byte-identical to the default build, validated on 10K queries against the row-centric reference at $t{=}16$ (§\ref{sec:correctness}).
+
+\subsection{Morsel-Driven Scheduler\label{sec:method:impl:morsel}}
+
+Unlike the query-batch engine, which amortises cluster loads within one Rayon task, the morsel-driven engine amortises cluster loads across all Rayon tasks. In the query-batch scenario, if two workers are processing the same cluster in parallel, each worker will load the cluster's data into its own L1/L2 cache, leading to redundant memory accesses (L3 is shared, but L1/L2 are private).
+
+We can address this by implementing a phase-aligned scheduler, which ensures that all workers process the same cluster before moving on to the next one, keeping the cluster's data hot in the shared L3 cache. The morsel engine (\texttt{--features morsel}) implements this pattern, following the HyPer/Umbra morsel-driven design~\cite{leis_2014,bandle_2021}.
+
+
+A morsel is the pair $(\text{cluster } c, \text{queries } [q_a..q_b))$. The implementation consists of four main components:
+
+\begin{itemize}
+    \item \textbf{Pre-bucketed phase-major queue.} A cluster is processed in the order of largest processing time first (Graham 1969~\cite{graham_1969}), binding the time the last worker finishes by $4/3 \times \text{OPT}$. We chunk queries in each cluster into \emph{morsels} by a sizing heuristic resulting in $\sim\!50$ queries on the largest clusters, scaling as the inverse-log of \texttt{n\_hists} on smaller ones.
+    \item \textbf{Per-worker Chase--Lev deques} Before any worker is spawned, all morsels are pushed back round-robin across the per-worker deques, in the order of largest time to process. Each worker then pops its own morsels FIFO from the front. A worker whose deque drains round-robin steals from the front of a peer's deque via \texttt{Stealer::steal}. 
+    \item \textbf{Soft phase alignment.} No explicit barrier: if all workers start at phase $0$ and consume FIFO from their own deques, they advance through phases roughly in tandem. Stragglers steal single elements across phases via \texttt{Stealer::steal}.
+    \item \textbf{Per-worker append-only output buffers.} Each pair of $(q,c)$ is processed by one worker, which writes the matching IDs into a per-worker flat buffer. No shared output buffer means no contention on emit
+\end{itemize}
+
+An implementation using per-worker $\times$ per-query \texttt{Vec<Vec<u32>>} produced hundreds of thousands of \texttt{Vec} headers per worker, each hitting a different cache line. Allocator pressure in this scenario was abysmal, leading to a 10--15$\times$ slowdown compared to the default build. 
+
+Another (v2) attempt using flat-buffer plus chunk-index (\texttt{Vec<u32>} plus \texttt{Vec<usize>}) alleviates the cost of the allocator pressure, but at the cost of a more complex merge phase. We validate the correctness of this approach against the default build on \texttt{c256\_10gb} at $t{=}16$, confirming byte-identical results.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  worker/.style={rectangle, draw=black!70, fill=gray!15, minimum width=13mm, minimum height=8mm, font=\footnotesize\bfseries},
+  workeridle/.style={worker, fill=red!8, draw=red!60!black},
+  morsel/.style={rectangle, draw=black!60, fill=blue!15, minimum width=5.5mm, minimum height=5.5mm, inner sep=0pt, font=\scriptsize},
+  endlbl/.style={font=\scriptsize\itshape, gray!55!black},
+  actlbl/.style={font=\scriptsize},
+  preload/.style={-Latex, thick, green!45!black, densely dotted},
+  pop/.style={-Latex, thick, blue!55!black},
+  steal/.style={-Latex, dashed, thick, red!65!black}
+]
+
+% ----- Preload banner (main thread, one-shot before workers spawn) -----
+\node[align=center, font=\scriptsize\itshape] at (4.25, 4.55) {main thread pre-loads morsels round-robin (LPT-sorted, phase-major) before spawning workers};
+\draw[preload] (0.3, 4.15) -- (0.3, 1.9);
+\draw[preload] (5.0, 4.15) -- (5.0, 1.9);
+\draw[preload] (10.0, 4.15) -- (10.0, 1.9);
+\node[actlbl, green!35!black, anchor=west] at (0.4, 3.85) {push (back)};
+
+% ----- W1 (owner busy) -----
+\node[worker] (w1) at (0, 3.2) {$W_1$};
+\foreach \i/\n in {1/{$m_1$}, 2/{$m_2$}, 3/{$m_3$}, 4/{$m_4$}} {
+  \node[morsel] at ({-1.5 + (\i-1)*0.6}, 1.5) {\n};
+}
+\draw[gray!50, thick, rounded corners=1pt] (-1.85, 1.85) -- (-1.85, 1.15) -- (0.65, 1.15) -- (0.65, 1.85);
+\node[endlbl] at (-1.5, 0.95) {front};
+\node[endlbl] at (0.3, 0.95) {back};
+\draw[pop] (-1.5, 1.85) to[out=90, in=-90] node[actlbl, left, pos=0.45] {pop} (-0.35, 2.75);
+
+% ----- W2 (owner busy) -----
+\node[worker] (w2) at (5, 3.2) {$W_2$};
+\foreach \i/\n in {1/{$n_1$}, 2/{$n_2$}, 3/{$n_3$}} {
+  \node[morsel] at ({3.8 + (\i-1)*0.6}, 1.5) {\n};
+}
+\draw[gray!50, thick, rounded corners=1pt] (3.45, 1.85) -- (3.45, 1.15) -- (5.35, 1.15) -- (5.35, 1.85);
+\node[endlbl] at (3.8, 0.95) {front};
+\node[endlbl] at (5.0, 0.95) {back};
+\draw[pop] (3.8, 1.85) to[out=90, in=-90] node[actlbl, left, pos=0.45] {pop} (4.65, 2.75);
+
+% ----- W3 (drained -> stealer) -----
+\node[workeridle] (w3) at (10, 3.2) {$W_3$};
+\draw[gray!50, thick, rounded corners=1pt] (9.4, 1.85) -- (9.4, 1.15) -- (10.6, 1.15) -- (10.6, 1.85);
+\node[endlbl] at (10, 1.5) {(drained)};
+
+% ----- Steal: W3 reaches over to W1's front -----
+\draw[steal] (-1.5, 1.4) -- (-1.5, 0.25) -- (10, 0.25) -- (w3.south);
+\node[actlbl, red!65!black, anchor=north] at (5, 0.2) {steal from front of $W_1$ via \texttt{Stealer::steal}};
+
+\end{tikzpicture}
+\caption{Per-worker Chase--Lev deques in the morsel scheduler.}
+\label{fig:method:chaselev}
+\end{figure}
+
+\subsection{Packed-IDs and Per-Cluster Reindexing\label{sec:method:impl:packed}}
+
+The variants introduced in §\ref{sec:method:impl:variants} all target the \emph{values} side of the index (how percentile columns are laid out and how they are searched). This section targets the other half, the \emph{emit} phase that copies matching histogram IDs out of a cluster into the result buffer once a match is found.
+
+Emit brings cost with it, since the default engine copies 32-bit IDs verbatim. On the primary workload, the write becomes a measurable share of the end-to-end time at high thread counts. Precision is also wasted since no cluster contains anywhere near $2^{32}$ histograms, so most of every emitted word is zero.
+
+\paragraph{Bit-packing the ID column.}  When building with \texttt{packed-ids}, we shrink each ID to \texttt{ceil(log2(max\_id + 1))} bits (19--23 bits across the calibration datasets, and 23 bits on the primary workload \texttt{c256\_56gb}). The IDs are column-major packed with a trailing padding word so that the decoder's word-sized loads can never overrun the buffer. This turns the emit into a three instruction sequence for each ID: (1) load a 64-bit word, (2) shift, (3) mask.
+
+Sizing the width correctly matters more than packing itself. If we size by cluster cardinality rather than by the largest ID present, high bits are silently truncated (due to the bit-width limitation): the engine compiles, completes, achieves $\sim \frac{1}{6}$ of the correct results. Width is now sized by the observed maximum ID, and the correctness gate catches any mis-sizing.
+
+\paragraph{Reindexing to local IDs.} If we bit-pack the global IDs, we get down to $\sim\!20$--$23$ bits (dataset-dependent). If each cluster reindexes its IDs to a local $[0, n_{\text{hists}})$ range, the width drops further to $\sim\!13$ bits. We run into the issue that downstream consumers expect global IDs, so the emitter has to translate through a per-cluster lookup table. This introduces two new costs: the lookup instructions, and the memory footprint of holding every cluster's translation table resident.
+
+\paragraph{A four-way decomposition.} We expose four build modes instead of committing to a single \texttt{local-ids} variant, so each cost can be measured in isolation. This lets us attribute any observed regression to a specific mechanism instead of just a black-box net effect. The four modes are the \texttt{packed-ids} baseline plus three \texttt{local-ids} variants:
+
+
+\begin{itemize}
+    \item[--] \emph{Global 20-bit}: baseline (\texttt{packed-ids}). No reindexing, no lookup.
+    \item[--] \emph{Local 13-bit, correct}: \texttt{local-ids}. Reindexed emit reads a 13-bit local ID and translates through the per-cluster table, byte-identical.
+    \item[--] \emph{Local 13-bit, no lookup}: \texttt{local-ids-bench}. Emits the local ID verbatim, so the output is \emph{incorrect} and this mode is only valid under \texttt{FAINDER\_SUPPRESS\_RESULTS=1}. Isolates the pure bandwidth win from the lookup cost.
+    \item[--] \emph{Local 13-bit, table absent}: \texttt{local-ids-noalloc}. Same emit path as \texttt{-bench}, but the translation table is never allocated.
+\end{itemize}
+
+\subsection{Memory Pooling and Allocation\label{sec:method:impl:pooling}}
+
+Our implementation does not build a generic arena allocator, instead, it embeds memory-pooling principles in four places:
+
+\begin{itemize}
+    \item \textbf{Columnar flat buffer.} The column-centric engine pre-allocates one \texttt{Vec<u32>} per cluster (with an offsets array) instead of one \texttt{Vec<u32>} per $(\text{query}, \text{cluster})$ pair. Instead of hundreds of thousands of small heap allocations per query batch, we have a handful of large pre-allocated buffers, eliminating glibc arena mutex contention.
+    \item \textbf{Pooled output buffer.} We pre-allocate one \texttt{Vec<u32>} per query, and extend it from each cluster's matching range. This avoids the per-cluster temporary \texttt{Vec<u32>} chain that the default row-centric engine produces via \texttt{(0..n\_clusters).flat\_map(process\_cluster).collect()}.
+    \item \textbf{Flat-binary mmap.} Python deserialisation of the index is a bottleneck for the row-centric engine. This is addressed by the \texttt{.fidx} flat-binary format (§\ref{sec:method:impl:serial}), which \texttt{load\_index()} detects at runtime by file extension and memory-maps in place of walking a Python pickle tree.
+    \item \textbf{Rebinning kernel.} The Rust rebinning kernel (§\ref{sec:method:impl:rebinning}) allocates, for each cluster, a single Fortran-order flat buffer and writes all cumsum values directly into it. This replaces the per-histogram intermediate arrays that NumPy's \texttt{argsort(axis=0)} would otherwise create.
+\end{itemize}
+
+
+\subsection{NUMA Placement\label{sec:method:impl:numa}}
+
+Our two-socket platform has two NUMA nodes, each with its own DDR5 memory controller. This means that we are in possession of two memory bandwidths: (1) on-socket DDR5 ($\sim\!300$\,GB/s per socket) and (2) cross-socket UPI. As mentioned, Linux and Rayon cause a worker on socket~1 to read bytes allocated on socket~0 at index-load time. This cross-socket traffic looks like DRAM bandwidth pressure in coarse counters but actually saturates a separate, smaller pipe.
+
+We can run four different \texttt{numactl} configurations to probe the UPI link's effect on throughput:
+
+\begin{itemize}
+    \item \textbf{Unpinned.} Linux first-touch, default scheduler.
+    \item \textbf{Single-socket-clean} (\texttt{numactl --cpunodebind=0 --membind=0}). Memory and CPUs both pinned to node~0, helps us identify if the UPI link is a bottleneck.
+    \item \textbf{Interleave 0,1} (\texttt{numactl --interleave=0,1}). Performs "Balance memory across sockets". Pages are allocated round-robin across both sockets. 
+    \item \textbf{Cross-socket forced} (\texttt{numactl --membind=0 --physcpubind=48..N}). Memory on node~0, CPUs on node~1. Worst-case configuration for UPI cost. Isolates the link as the binding pipe.
+\end{itemize}
+
+The pre-flight ceiling-identification methodology (§\ref{sec:exp:negcomp:preflight}) systematises this four-configuration probe. It is able to tell whether the UPI link is a bottleneck, and if so, whether it is due to the link itself or due to the memory controller on the remote socket.
+
+
+\subsection{PyO3 Integration\label{sec:method:impl:pyo3}}
+
+In combination with Maturin, PyO3 lets us write the query engine in Rust and expose it to Python as a native extension module. The index constructor accepts the pre-built index as a Python list of NumPy arrays and copies values into Rust-native \texttt{Vec} storage. Type Conversions (f16 cast, bit packing) are performed during ingestion. After construction, the index is read-only and shared across threads.
+
+The Python wrapper exposes a single \texttt{run\_queries} function that accepts a list of queries and returns a list of result arrays. The engine is fully parallelised using Rayon, and the GIL is released during query execution. After execution, the GIL is re-acquired to return the results to Python as a Python list of \texttt{numpy.ndarray} arrays. The overhead is a fixed $\sim\!2$\,ms regardless of dataset size.
+
+The reason we return \texttt{numpy.ndarray} instead of a Python \texttt{set} is that the latter would require a per-element \texttt{PyObject} allocation, which is expensive. Instead, it performs a single \texttt{memcpy} from the Rust \texttt{Vec<u32>} into a NumPy buffer.
+
+\subsection{Flat-Binary Index Format\label{sec:method:impl:serial}}
+
+The original Fainder index serialises as a single \texttt{pickle+zstd} file. To load, it decompresses $\sim\!500$\,MB of zstd stream into $\sim\!25$\,GB of Python object tree (nested lists of tuples of NumPy arrays). This requires Python to allocate wrapper objects for every list, tuple, and array in the hierarchy. For \texttt{c256\_30gb} this takes about $15$\,s per load. For experiments that run the same index repeatedly (a seven-point thread sweep, for instance) this adds $\sim\!100$\,s of avoidable I/O overhead. The flat-binary format addresses this by storing the index as a directory of raw \texttt{.npy} files, which can be memory-mapped and loaded on demand.
+
+This flat index is a collection of .npy files, one bin per cluster, two arrays per cluster per mode (percentiles and IDs), and a small meta.json. The .npy files are memory-mapped, allowing the OS to page in data on demand as the query engine accesses it. This reduces load time, as shown in Table~\ref{tab:method:serial}.
+
+\begin{table}[H]
+    \centering
+    \caption{Index loading on \texttt{c256\_30gb} ($5{,}000$ queries, $t{=}16$). Load time is the 3-run median; end-to-end includes query execution with \texttt{FAINDER\_SUPPRESS\_RESULTS=1}.}
+    \label{tab:method:serial}
+    \begin{tabular}{llrrl}
+        \toprule
+        Format & Mode & Load time & End-to-end & vs.\ legacy \\
+        \midrule
+        pickle+zstd         & copy to RAM      & $15.2$\,s & $39.7$\,s & baseline \\
+        flat-binary (.fidx) & copy to RAM      & $12.1$\,s & $32.3$\,s & $1.23\times$ \\
+        flat-binary (.fidx) & mmap (warm cache) & $0.013$\,s & $21.0$\,s & $1.89\times$ \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+The \texttt{load\_index()} function detects whether the path is a .fidx directory or a .zst file and dispatches accordingly. Benchmarks in Chapter~\ref{cha:chapter4} use the mmap mode, meaning that load times do not influence query timing.
+
+\subsection{Rust Rebinning Kernel\label{sec:method:impl:rebinning}}
+
+The Python baseline rebinning pipeline is a two-stage process that is CPU-bound and serial across clusters.
+\begin{enumerate}
+    \item \textbf{Rebinning.} Each histogram is rebinned from $n_\text{bins}$ to $n_\text{bins}'$ bins, producing a float32 array of shape $(n_\text{bins}', n_\text{hists})$. 
+    \item \textbf{Index construction.} The rebinned matrix is cumulatively summed along the bin axis and then each column is sorted by cumulative percentile, producing a float32 array of shape $(n_\text{bins}', n_\text{hists})$ and a uint32 array of shape $(n_\text{bins}', n_\text{hists})$.
+\end{enumerate}
+
+Both stages are serial across clusters.
+
+The Rust kernel fuses both stages into a single function that accepts all histogram data for one cluster and returns the fully sorted percentile arrays:
+
+\begin{enumerate}
+    \item Parallel rebinning releases the GIL and uses Rayon to parallelise per-histogram rebinning across all available cores.
+    \item Cumulative sums are computed per-histogram into a flat buffer, then each column's \texttt{(value,\,id)} pairs are sorted with Rust's stable \texttt{slice::sort\_by} on a per-column \texttt{Vec<(f32,u32)>}. This avoids the large $N \times M$ temporary that NumPy's \texttt{argsort} requires; the per-column pair buffer is $O(n_\text{hists})$ and is reused across bin boundaries.
+    \item Lastly, the sorted percentile and ID arrays are returned to Python as a tuple of \texttt{ndarray} objects, which PyO3 converts into NumPy arrays.
+\end{enumerate}
+
+A thin Python wrapper function invokes the Rust kernel. This replaces the NumPy index construction and the Pool-based rebinning with a single call to Rust per cluster. Since the Python caller constructs input arrays with \texttt{np.ascontiguousarray(..., dtype=np.float32)}, all inputs are guaranteed contiguous before the PyO3 boundary, which means that \texttt{PyReadonlyArray1::as\_slice()} is safe and zero-copy.
+
+\section{Experimental Protocol\label{sec:method:protocol}}
+
+\subsection{Perf-Counter Collection}
+
+Every run of the benchmark harness is a single invocation of \texttt{run-queries} with a specific $(t, \text{build}, \text{dataset})$ triple. It runs \texttt{perf stat} with the following events: retired instructions, cycles, L1d loads and misses, LLC (L3) loads and misses, cache references, cache misses, branch instructions and misses, and four FP-arithmetic events (AVX-512 packed single/double, AVX-256 packed single/double). We store every counter per run alongside the wall-clock time in an SQLite database \texttt{bench.db}. IPC is computed as retired-instructions divided by cycles, and LLC-miss density as LLC-load-misses divided by retired instructions.
+
+\subsection{Correctness Validation\label{sec:correctness}}
+
+To consider any performance result valid, we must ensure that the Rust engine's result sets match the Python reference. The harness runs a correctness check at every configuration before timing; any failed correctness check fails the cell. No performance number in Chapter~\ref{cha:chapter4} is reported without a passing correctness check at the same configuration.
+
+\subsection{Thread Sweep and Repetitions}
+
+We measure against the following thread counts $t \in \{1,\allowbreak 8,\allowbreak 12,\allowbreak 14,\allowbreak 16,\allowbreak 18,\allowbreak 20,\allowbreak 24,\allowbreak 28,\allowbreak 32,\allowbreak 48,\allowbreak 64,\allowbreak 96,\allowbreak 128,\allowbreak 192\}$. We do not populate every cell in the matrix with a $(t, \text{build}, \text{dataset})$ triple, since the coarse grid $\{1, 8, 16, 32, 64, 96\}$ covers all builds and datasets. We perform finer $t$ sweeps ($\{12, 14, 18, 20, 24, 28, 48\}$) for specific ceilings and instances of negative composability (notably ceiling~(ii) at $t \approx 16$; §\ref{sec:exp:c2}). Threads $t \in \{128, 192\}$ exercise Hyperthreading and appear only in the scaling experiment (§\ref{sec:exp:scaling}). 
+
+We repeat each cell $(t, \text{build}, \text{dataset})$ five times and report the median. If the point estimate is smaller than the single-cell variance in the campaign, we repeat the fine-$t$ f16 experiment (§\ref{sec:exp:c2:f16}) ten times per cell to tighten the confidence interval.
+
+\subsection{Warm-Cache Regime}
+
+This work is concerned with query-serving workloads, where the index is expected to be resident in memory. Thus, all experiments are run in the warm-cache regime. We map the index into memory once at process start, and every rep after the first amortises page-cache and TLB warm-up. We discard the first rep of every $(t, \text{build}, \text{dataset})$ sweep from the median to avoid cold-start effects.
+
+
+\subsection{Suppress-Results vs With-Results\label{sec:method:suppress}}
+
+There are two measurements used throughout our Experiments:
+
+\begin{itemize}
+    \item \emph{Suppress-results} (\texttt{FAINDER\_SUPPRESS\_RESULTS=1}) measures the query-execution cost in isolation, without the overhead of serialising the results back to Python. Used in §\ref{sec:exp:c1}--§\ref{sec:exp:c4} and §\ref{sec:exp:negcomp:instances}
+    \item \emph{With-results} (\texttt{FAINDER\_SUPPRESS\_RESULTS=0}) measures the end-to-end cost, including serialisation of results back to Python. Used in §\ref{sec:exp:python}, §\ref{sec:exp:e2e}, and §\ref{sec:exp:dispatch}. The claim of user-visible speedup is based on this measurement.
+\end{itemize}
+
+The two modes differ by orders of magnitude on the larger workloads. In with-results mode, the Python baseline constructs a per-\emph{(query, cluster)} result dictionary and boxes the matching IDs into NumPy arrays; on the primary workload this materialisation dominates the end-to-end wall. Running a large query batch in with-results mode is therefore materialisation-bound, not search-bound. The Rust engine does not construct this dictionary at all, instead it generates a compact NumPy array of matches and returns it to the caller. Suppress-results isolates the search phase, which is where the ceiling ablations operate; with-results is the user-visible cost, and the quantitative decomposition is reported in §\ref{sec:exp:e2e:mat}.
+
+\subsection{Confidence Intervals\label{sec:method:ci}}
+
+A Confidence Interval (CI) is a range of values that is likely to contain the true value of an unknown population parameter.
+
+We compare two builds $a$ and $b$ using a pooled Student $t$-approximation (equal-sample, near-equal-variance, appropriate under the campaign's fixed $n_a=n_b=5$ reps per cell). The $95\%$ half-width of the mean-difference interval is
+\[
+\text{CI}_{95} = t_{n_a + n_b - 2,\;0.975} \cdot \sqrt{\frac{s_a^2}{n_a} + \frac{s_b^2}{n_b}}
+\]
+where $s_a$ and $s_b$ are the sample standard deviations of the two groups, $n_a$ and $n_b$ are the sample sizes, and $t_{n_a+n_b-2,\,0.975}$ is the critical value from the $t$-distribution with $n_a+n_b-2$ degrees of freedom. For the campaign's $n_a=n_b=5$ this is $t_{8,\,0.975} \approx 2.306$. Where two builds show visibly unequal variance in the same cell, we cross-check with a Welch--Satterthwaite computation~\cite{welch_1947,satterthwaite_1946} and report the wider of the two intervals.
+
+
+\section{Hypotheses\label{sec:method:hypotheses}}
+
+For each ablation we formulate an \emph{a-priori} hypothesis about the expected wall response. The experiment either confirms or falsifies the hypothesis, and if falsified, we provide a performance mechanism explanation in (§\ref{sec:exp:negcomp:instances}). The hypotheses are as follows:
+
+\subsection{Ceiling (i) --- Compute / L1 Latency}
+
+\textbf{Hypothesis (i).} Increasing per-comparison instruction throughput will reduce wall at every thread count. Techniques used to increase throughput include leaf-stage AVX-512, MSHR-pipelined batch search, horizontal-SIMD lockstep, and PGM learned index.
+
+\textbf{Falsification condition.} If wall stays within $\pm 10\%$ of default at every $(\text{dataset}, t)$ cell, we can conclude that the binding cost is the \emph{number} of per-cluster dependent-load chains, not the depth or throughput of any individual chain. In the case of falsification, the taxonomy of the four ceilings must separate compute throughput from load-latency, and every subsequent ablation must reason about the latter.
+
+\subsection{Ceiling (ii) --- Shared L3 Capacity}
+
+\textbf{Hypothesis (ii).} Footprint-reducing optimisations will reduce wall at intermediate thread count ($t \in [8, 32]$), and footprint-expanding optimisations will increase it. The shared L3 cache is $105$\,MiB per socket, and the working set of each thread is $\sim\!5$\,MiB.
+
+\textbf{Falsification condition.} If LLC-miss density does not track wall consistently across builds, a second ceiling has taken over. If we observe elevated LLC misses in a build but null or negative wall response at high $t$, the second ceiling is likely on-socket memory-traffic pressure.
+
+\subsection{Ceiling (iii) --- On-Socket Memory-Traffic Pressure}
+
+\textbf{Hypothesis (iii).} At higher thread count ($t \in [32, 48]$), where the anti-scaling signature appears due to memory hierarchy pressure, bandwidth-reducing optimisations targeting the search phase (\texttt{f16}) and the emit phase (\texttt{packed-ids}) will each win at the bare default.
+
+\textbf{Falsification condition.} Layering packed-ids on top of \bcombo{} regresses instead of composing positively, the emit-bandwidth ceiling has already been collected by the coarser optimisation.
+
+
+\subsection{Ceiling (iv) --- Cross-Socket UPI}
+
+\textbf{Hypothesis (iv).} 
+
+\texttt{numactl} with four configurations (unpinned first-touch; single-socket; interleave; cross-socket forced) will separate on-socket memory-traffic pressure from cross-socket UPI saturation.
+
+\textbf{Falsification condition.} If we do not observe a measurable difference between single-socket and unpinned first-touch at $t \leq 48$, the two ceilings are indistinguishable on this workload and the four-ceiling taxonomy reduces to three.
+
+\subsection{Negative-Composability Instances}
+
+Each of the five negative-composability instances (§\ref{sec:exp:negcomp:instances}) is a hypothesis about how a specific ablation will affect wall, and each has a falsification condition:
+
+\begin{itemize}
+    \item \textbf{§\ref{sec:exp:c3:packed} (\bcombo{} $+$ \texttt{packed-ids}).} Reducing emit-phase write volume by $\sim\!37\%$ should reduce wall proportionally to how much of the residual on-socket memory-traffic pressure ceiling is able to be attributed to the emit phase.
+    \item \textbf{§\ref{sec:exp:wf:qb} (\bcombo{} $+$ \texttt{qbatch K=128}).} Amortising cluster cold-loads across $K$ queries should reduce total memory traffic by roughly $1{-}1/K$ of the residual cold-load cost.
+    \item \textbf{§\ref{sec:exp:wf:morsel} (\texttt{qbatch $+$ morsel}).} Coordinating cluster reads across workers should recover any residual L3 misses attributable to inter-task cold-load duplication.
+    \item \textbf{§\ref{sec:exp:reindex} (\texttt{packed-ids $+$ local-ids}).} A narrower per-cluster decoder ($bw{\approx}13$ vs $bw{\approx}20$) should reduce read-side bandwidth by roughly the ratio of the widths.
+    \item \textbf{§\ref{sec:exp:c4} (\texttt{first-touch $+$ interleave}).} Spreading page allocation across both NUMA nodes should reduce cross-socket UPI traffic when the workload spans both sockets.
+\end{itemize}
+
+Every hypothesis has a measurement associated with it, which either confirms or falsifies it; where falsification occurs, a perf-counter-grounded mechanism story accompanies it in §\ref{sec:exp:negcomp:instances}. The pattern of falsifications is what motivates the pre-flight methodology of §\ref{sec:exp:negcomp:preflight}.
+
+\subsection{Dispatcher and Out-of-Distribution Validation}
+
+\textbf{Hypothesis (dispatch).} A dispatch function $(n_{\text{hists}}, n_{\text{clusters}})$ based on the in-distribution (\texttt{c256\_56gb}, \texttt{c256\_30gb}, \texttt{c256\_10gb}) sweep will select the fastest build at every cell of the three calibration datasets, within $5\%$ of the actual best. 
+
+
+\textbf{Falsification condition.} Any $(t, \text{dataset})$ cell where the dispatched build is more than $5\%$ slower than the actual best on that cell.
+\textbf{Hypothesis (OOD).} The dispatch function, ceilings, and negative-composability instances will generalise to the out-of-distribution dataset \texttt{c1024\_56gb} ($\sim\!8.2$\,K hists/cluster vs $\sim\!26$\,K at \texttt{c256\_56gb}). The dispatched build will be within $5\%$ of the actual best at every $(t, \text{dataset})$ cell.
+
+\textbf{Falsification condition.} Any $(t, \text{dataset})$ cell where the dispatched build is more than $5\%$ slower than the actual best on that cell. The negative-composability instances will reproduce at the OOD point, and any instance that does not reproduce is a falsification of the hypothesis.

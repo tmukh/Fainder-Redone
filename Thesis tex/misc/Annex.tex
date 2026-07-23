@@ -1,0 +1,134 @@
+\addchap{Appendix A. Reproduction and Implementation Details}
+\label{app:reproduction}
+
+This appendix documents the hardware, software, and build configuration used for every measurement in Chapter~\ref{cha:chapter4}, and provides explicit reproduction recipes for each ablation.
+
+\section*{A.1 Hardware}
+
+\begin{itemize}
+  \item \textbf{Server}: single shared-memory node (192 logical threads total).
+  \item \textbf{CPU}: 2\,$\times$ Intel Xeon Platinum 8468H (Sapphire Rapids, 48 physical cores per socket, hyperthreading enabled, up to 2.1\,GHz base / 3.8\,GHz turbo).
+  \item \textbf{Caches}: 48\,KB L1-dcache per core; 2\,MB L2 per core; 105\,MB L3 per socket (shared within a NUMA node).
+  \item \textbf{NUMA}: two nodes, one per socket. Node~0 holds logical CPUs 0--47 and their hyperthread siblings 96--143; node~1 holds 48--95 and 144--191. The 48-physical-core-per-node bound is the reason thread counts $t \geq 64$ span both NUMA nodes.
+  \item \textbf{Memory}: $\approx$1\,TB DDR5 across both sockets, eight channels per socket.
+  \item \textbf{Storage}: NVMe SSD (dataset loads); \texttt{/dev/shm} RAM-backed tmpfs (storage-hierarchy ablation).
+\end{itemize}
+
+\section*{A.2 Software}
+
+\begin{itemize}
+  \item \textbf{OS}: Ubuntu 22.04.5 LTS, Linux kernel 5.15.0-176-generic, glibc 2.35.
+  \item \textbf{Rust}: rustc 1.94.1 (LLVM 21.1.8). Cargo default \texttt{release} profile (\texttt{opt-level=3}); \texttt{-C target-cpu=native} supplied via \texttt{.cargo/config.toml}.
+  \item \textbf{Python}: 3.10.12; NumPy 1.26.4; zstandard 0.22.0.
+  \item \textbf{Rust crates} (Cargo.lock resolved): pyo3 0.22.6; numpy 0.22.1; rayon 1.11.0; ndarray 0.16.1; half 2.7.1; mimalloc 0.1.50; crossbeam-deque 0.8.6; thiserror 1.0.69.
+  \item \textbf{Build tool}: Maturin 1.7. The Rust extension is compiled via \texttt{maturin develop --release [--features ...]} and installed into the active virtualenv.
+  \item \textbf{Profiling}: Linux \texttt{perf} 5.15 (\texttt{/proc/sys/kernel/perf\_event\_paranoid = 1}).
+\end{itemize}
+
+\section*{A.3 Repository Structure}
+
+The full repository layout is documented in the artefact's \texttt{README} (\url{https://github.com/tmukh/Fainder-Redone}). Rust engine lives under \texttt{src/}, the Python integration under \texttt{fainder/}, the benchmark drivers under \texttt{scripts/}, the figure-generation code under \texttt{analysis/}, and the raw measurement database under \texttt{logs/}.
+
+\section*{A.4 Feature-Flag Matrix}
+
+The Rust crate uses Cargo feature flags to compile alternative implementations of \texttt{SubIndex}, the search loop, and the parallelism strategy. Exactly one feature combination is active per build.
+
+\footnotesize
+\begin{tabular}{llp{7cm}}
+  \toprule
+  Flag & Default & Effect \\
+  \midrule
+  (none)         & yes & SoA layout, f32 values, stdlib \texttt{partition\_point}, query-level parallelism \\
+  \texttt{aos}   & no  & Array-of-Structs layout: \texttt{Vec<(f32,u32)>} \\
+  \texttt{f16}   & no  & Half-precision percentile values \\
+  \texttt{cluster-par} & no & Nested \texttt{par\_iter} over clusters (documented negative result) \\
+  \texttt{simd}  & no  & AVX-512 leaf-stage compare in the binary-search inner loop \\
+  \texttt{batch-search} & no & 8-way interleaved binary search (columnar engine only) \\
+  \texttt{horizontal-simd} & no & AVX-512 16-query horizontal lockstep \\
+  \texttt{pgm}   & no  & PGM learned-index search \\
+  \texttt{packed-ids} & no & Bit-packed per-cluster identifiers \\
+  \texttt{local-ids}, \texttt{-bench}, \texttt{-noalloc} & no & Reindexed 13-bit local IDs (three mutually-exclusive variants) \\
+  \texttt{pooled} & no & Pre-allocated per-query output buffer \\
+  \texttt{pin-cores} & no & Rayon workers pinned to distinct physical cores \\
+  \texttt{cluster-prefetch} & no & Software \texttt{\_mm\_prefetch} of cluster $c{+}1$ \\
+  \texttt{mimalloc} & no & mimalloc allocator \\
+  \texttt{query-batch} & no & Column-centric inner loop over K-query batches \\
+  \texttt{morsel} & no & Chase--Lev deque phase-aligned scheduler \\
+  \bottomrule
+\end{tabular}
+
+\vspace{0.5em}
+\noindent The \texttt{eytzinger} and \texttt{kary} feature flags belong to an earlier campaign build and are not present in the final integrated build's \texttt{Cargo.toml}.
+
+\section*{A.5 Reproduction Recipes}
+
+All commands assume the working directory is the repository root and the Python virtualenv is activated (\texttt{source venv/bin/activate}).
+
+\textbf{Dataset naming.} The shell scripts accept legacy datasets (\texttt{eval\_10gb}, \texttt{eval\_medium}, \texttt{dev\_small}) as CLI arguments, matching the on-disk dataset folder names on the measurement server. These map to the naming used throughout the thesis body and the measurement database as follows:
+
+\footnotesize
+\begin{tabular}{ll>{\raggedright\arraybackslash}p{5cm}}
+  \toprule
+  Script argument & Thesis name & Notes \\
+  \midrule
+  \texttt{eval\_10gb}   & \texttt{c256\_10gb}  & $K=256$, $\sim$10\,GB \\
+  \texttt{eval\_medium} & \texttt{c256\_30gb}  & $K=256$, $\sim$30\,GB \\
+  (built fresh)         & \texttt{c256\_56gb}  & $K=256$, $\sim$56\,GB, full workload \\
+  (built fresh)         & \texttt{c1024\_56gb} & $K=1024$; reclusters \texttt{c256\_56gb} for the out-of-distribution probe \\
+  \texttt{dev\_small}   & ---                  & Smoke test only; not used in results \\
+  \bottomrule
+\end{tabular}
+
+\vspace{0.5em}
+
+\textbf{Build.} The default (SoA + f32 + partition\_point) build is:
+\begin{verbatim}
+maturin develop --release
+\end{verbatim}
+
+For an ablation-specific build, pass the feature flag:
+\begin{verbatim}
+maturin develop --release --features f16
+maturin develop --release \
+    --features "pooled f16 simd pin-cores cluster-prefetch mimalloc"
+\end{verbatim}
+
+\textbf{Ablation runs.} Each ablation has a shell driver that (1) compiles the relevant build, (2) runs the thread sweep with \texttt{--suppress-results}, (3) extracts the \texttt{Rust index-based query execution time} per log, and (4) prints a summary table. Representative commands:
+
+\begin{verbatim}
+# Thread sweep (default build, 7 thread counts 1-64)
+bash scripts/ablation_parallel.sh eval_medium
+
+# f16 vs f32 (rebuilds twice)
+bash scripts/ablation_f16.sh eval_medium
+
+# Columnar vs row-centric
+bash scripts/ablation_columnar.sh eval_medium
+
+# NUMA pinning
+bash scripts/ablation_numa.sh eval_medium
+\end{verbatim}
+
+\textbf{Perf counters.} The perf-stat runs use \texttt{--delay=40000} to skip the $\sim$35\,s of load+init+warmup, and repeat the measured query set five times to avoid under-sampling:
+
+\begin{verbatim}
+bash scripts/perf_comprehensive.sh eval_medium
+bash scripts/perf_branch_misses.sh
+\end{verbatim}
+
+\textbf{Figure regeneration.} Figures are regenerated from the measurement logs without re-running the experiments:
+
+\begin{verbatim}
+python analysis/plot_all_results.py
+python analysis/plot_hardware_ablation.py
+\end{verbatim}
+
+\section*{A.6 Query Metric}
+
+All ablation runs use \texttt{suppress\_results=True}, which returns empty result vectors while still executing the full binary-search work. This isolates search time from the Python set-building phase that dominated pre-PyO3-fix measurements and would otherwise swamp engineering-scale differences between variants. The extracted metric is the log line emitted by the Rust backend:
+
+\begin{verbatim}
+Rust index-based query execution time: X.XXXs
+\end{verbatim}
+
+This represents the wall-clock time of the Rayon-parallel query phase only, excluding the one-time \texttt{FainderIndex} construction from NumPy arrays ($\sim$17\,s on \texttt{eval\_medium}) and the initial index load (0.013\,s via mmap).

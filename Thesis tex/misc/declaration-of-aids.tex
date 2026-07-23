@@ -1,0 +1,51 @@
+\newpage
+
+\section*{Documentation of Tool Usage}
+
+In accordance with the requirements for good scientific practice, below I have documented my use of AI-based tools in the process of producing this thesis. The documentation follows the work-phase-oriented format of Baresel et al., \emph{KI-Gebrauch im Studienkontext dokumentieren} \cite{baresel_2024}, including its four-level scale for the degree of use:
+
+\begin{center}
+\footnotesize
+\begin{tabular}{lp{10.5cm}}
+\hline
+\textbf{Degree} & \textbf{Characterisation} \\
+\hline
+1 & For inspiration (suggestions considered, own formulation) \\
+2 & Supplementary (explanations, summaries, formatting suggestions) \\
+3 & Supportive (dialogic drafting, AI output iteratively revised by the author) \\
+4 & Content-shaping (generated content adopted directly, e.g.\ program code) \\
+\hline
+\end{tabular}
+\end{center}
+
+\vspace{0.3cm}
+
+\noindent Tools used: \textbf{Claude Code} (Anthropic, Claude model family) and \textbf{GitHub Copilot} (Microsoft). For degrees 3--4, the evidence column points to the artefact repository (\url{https://github.com/tmukh/Fainder-Redone}), where the generated code is archived.
+
+\vspace{0.3cm}
+
+\footnotesize
+\begin{tabular}{|>{\raggedright\arraybackslash}p{2.9cm}|>{\centering\arraybackslash}p{1.1cm}|>{\raggedright\arraybackslash}p{4.6cm}|>{\raggedright\arraybackslash}p{4.2cm}|}
+\hline
+\textbf{Process phase} & \textbf{Degree} & \textbf{Tool and example/evidence} & \textbf{Reflection} \\
+\hline
+Finding and defining the topic & --- & --- & --- \\
+\hline
+Literature research & --- & --- & --- \\
+\hline
+Implementing the prototype & 3 & Claude Code: boilerplate scaffolding (Cargo file setup, PyO3 binding stub boilerplate, testing boilerplate code) & Engine design, algorithms, and optimisation choices are my own. \\
+\hline
+Data analysis & 3 & Claude Code: SQL query generation over the measurement database, analysis code in \texttt{analysis/}. overview of perf capabilities for sweeps to see what data can be collected & All interpretations and mechanism explanations are my own, generated queries fine-tuned to extract the data we needed \\
+\hline
+Revising (content, structure, language) & 2 & Claude Code: consistency checks of numerical claims against the measurement database (bench.db), data styling (tabular vs in-text). Help with \LaTeX{} Errors.  matplotlib and TikZ code generation, regeneration scripts in the artefact & factual checks traced every number to a database row.  Figure content and design intent specified by me, code adopted after review, data is my own \\
+\hline
+Bibliography and formatting & 3 & Claude Code: BibTeX and \LaTeX{} formatting & Reference selection is my own \\
+\hline
+\end{tabular}
+
+\normalsize
+\vspace{0.5cm}
+
+\noindent All scientific claims, including the four ceiling characterisation, negative composability, pre-flight ceiling identification and dispatch policy, are my own work
+
+All methodology choices, formulations of hypoteheses, and interpreations of the empirical results are my own work. AI-generated output was used for drafting, formatting, and consistency checks, but not for content generation. I bear sole responsibility for the content of this thesis, and for any errors or omissions that may remain.
