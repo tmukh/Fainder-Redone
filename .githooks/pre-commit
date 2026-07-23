@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# Sync Claude Code memory + session transcripts from the live
+# ~/.claude/projects/<slug>/ location into .claude-portable/ so the
+# current commit captures the up-to-date state.
+# Works on Git Bash (Windows) and Linux/macOS.
+
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+# Derive the Claude project slug from the repo-root absolute path.
+# On Windows the encoded folder name is e.g.
+#   C:\Users\tarik\Desktop\final thesis submission
+#   -> c--Users-tarik-Desktop-final-thesis-submission
+# On Linux/macOS:
+#   /home/tarik/thesis  ->  -home-tarik-thesis
+if REPO_WIN="$(pwd -W 2>/dev/null)"; then
+  # Git Bash on Windows — pwd -W returns the drive-letter form.
+  # Lowercase drive letter, replace [\/:] and space with '-'.
+  SLUG="$(printf '%s' "$REPO_WIN" \
+    | sed -e 's|^\(.\)|\L\1|' \
+          -e 's|[\\/:]|-|g' \
+          -e 's| |-|g')"
+else
+  # Linux / macOS.
+  SLUG="$(printf '%s' "$PWD" | sed -e 's|/|-|g' -e 's| |-|g')"
+fi
+
+SRC="$HOME/.claude/projects/$SLUG"
+
+if [[ ! -d "$SRC" ]]; then
+  echo "pre-commit: Claude project folder $SRC not found; skipping .claude-portable sync" >&2
+  exit 0
+fi
+
+DST=".claude-portable"
+mkdir -p "$DST/memory" "$DST/sessions"
+
+# Sync live memory files.
+if [[ -d "$SRC/memory" ]]; then
+  cp -r "$SRC/memory/." "$DST/memory/"
+fi
+
+# Sync historical memory archive folders (memory_archive_YYYY-MM-DD).
+for arch in "$SRC"/memory_archive_*; do
+  [[ -d "$arch" ]] && cp -r "$arch" "$DST/"
+done
+
+# Sync all session transcripts.
+if compgen -G "$SRC/*.jsonl" > /dev/null; then
+  cp "$SRC"/*.jsonl "$DST/sessions/"
+fi
+
+# Stage the synced files so they land in the current commit.
+git add "$DST"
+
+exit 0

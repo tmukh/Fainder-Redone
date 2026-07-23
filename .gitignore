@@ -1,0 +1,119 @@
+# IDEs
+.idea/
+.vscode/*
+!.vscode/settings.json
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Environments
+venv/
+.env
+
+# mypy
+.mypy_cache/
+
+# pytest
+.pytest_cache/
+
+# numba
+.numba_cache/
+
+# Core latex/pdflatex auxiliary files
+*.aux
+*.lof
+*.log
+*.lot
+*.fls
+*.out
+*.toc
+*.fmt
+*.fot
+*.cb
+*.cb2
+.*.lb
+*.cut
+
+# Intermediate documents
+*.dvi
+*.xdv
+*-converted-to.*
+
+# Bibliography auxiliary files (bibtex/biblatex/biber)
+*.bbl
+*.bcf
+*.blg
+*-blx.aux
+*-blx.bib
+*.run.xml
+*SAVE-ERROR
+
+# Build tool auxiliary files
+*.fdb_latexmk
+*.synctex
+*.synctex(busy)
+*.synctex.gz
+*.synctex.gz(busy)
+*.pdfsync
+
+# Matplotlib config
+.config/matplotlib/
+
+# Local project folders
+/data/*
+plots/
+poster/
+talk/
+
+# Include the LLM predicate workload in Git
+!/data/llm_workload/
+
+# Rust & Env
+target/
+.venv/
+*.so
+logs/*
+!logs/bench.db
+logs_archive_*
+archive/logs_*
+.python-version
+*.tmp
+
+# Re-packaged project tarballs (redundant with the repo itself)
+fainder-project-full-*.tar
+fainder-project-full-*.tar.gz
+fainder-project-full-*.tar/
+
+# Personal working files (not part of the published artefact)
+CLAUDE.md
+LENNART_REVIEW_CHECKLIST.md
+.claude/
+.claude-portable/
+AI guidelines.pdf
+Proposal_Signed-2.pdf
+Thesis_Ch1-Ch4_draft_*.pdf

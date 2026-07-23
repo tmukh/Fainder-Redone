@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# Sync .claude-portable/ (versioned) into the live Claude Code
+# ~/.claude/projects/<slug>/ location after a git pull / merge so the
+# incoming memory + session transcripts are picked up automatically.
+# Mirror image of .githooks/pre-commit (which syncs the other direction).
+# Works on Git Bash (Windows) and Linux/macOS.
+
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+SRC=".claude-portable"
+if [[ ! -d "$SRC" ]]; then
+  exit 0
+fi
+
+# Derive the Claude project slug from the repo-root absolute path.
+# On Windows the encoded folder name is e.g.
+#   C:\Users\tarik\Desktop\final thesis submission
+#   -> c--Users-tarik-Desktop-final-thesis-submission
+# On Linux/macOS:
+#   /home/tarik/thesis  ->  -home-tarik-thesis
+if REPO_WIN="$(pwd -W 2>/dev/null)"; then
+  SLUG="$(printf '%s' "$REPO_WIN" \
+    | sed -e 's|^\(.\)|\L\1|' \
+          -e 's|[\\/:]|-|g' \
+          -e 's| |-|g')"
+else
+  SLUG="$(printf '%s' "$PWD" | sed -e 's|/|-|g' -e 's| |-|g')"
+fi
+
+DST="$HOME/.claude/projects/$SLUG"
+mkdir -p "$DST/memory"
+
+# Copy memory files. -u so a newer local memory file is NOT clobbered
+# by a stale one from the repo (local Claude edits win in a race).
+if [[ -d "$SRC/memory" ]]; then
+  cp -ru "$SRC/memory/." "$DST/memory/"
+fi
+
+# Copy historical memory archive folders (memory_archive_YYYY-MM-DD).
+for arch in "$SRC"/memory_archive_*; do
+  [[ -d "$arch" ]] && cp -ru "$arch" "$DST/"
+done
+
+# Copy session transcripts, but only if the repo copy is STRICTLY LARGER
+# than the live copy. JSONLs are append-only, so "bigger file wins" is a
+# reliable freshness heuristic. This guards against `git pull` resetting
+# the incoming file's mtime to NOW and thereby fooling `cp -u` into
+# clobbering an actively-growing local session with an older-content copy.
+if compgen -G "$SRC/sessions/*.jsonl" > /dev/null; then
+  for f in "$SRC"/sessions/*.jsonl; do
+    dst="$DST/$(basename "$f")"
+    if [[ ! -e "$dst" ]] || [[ $(stat -c%s "$f") -gt $(stat -c%s "$dst") ]]; then
+      cp "$f" "$dst"
+    fi
+  done
+fi
+
+echo "post-merge: synced .claude-portable/ -> $DST"
+exit 0
