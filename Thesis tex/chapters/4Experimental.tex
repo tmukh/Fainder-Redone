@@ -41,7 +41,7 @@ The Python baseline (\texttt{FAINDER\_NO\_RUST=1}) is the unmodified Fainder lib
 
 \begin{table}[H]
   \centering
-  \caption{Python baseline wall-clock, median of 5 reps, \texttt{with-results} mode, 10K queries. The \texttt{c256\_56gb} cell exceeds the per-run cap; its wall is measured via a 1K-query subsample scaled $\times 10$ (§\ref{sec:exp:e2e:mat}).}
+  \caption[Python baseline wall-clock.]{Python baseline wall-clock, median of 5 reps, \texttt{with-results} mode, 10K queries. The \texttt{c256\_56gb} cell exceeds the per-run cap, its wall is measured via a 1K-query subsample scaled $\times 10$ (§\ref{sec:exp:e2e:mat}).}
   \label{tab:python_wall}
   \begin{tabular}{lrrrrrr}
     \toprule
@@ -83,7 +83,7 @@ We also observe two further regimes (HT-sibling contention and work-fragmentatio
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.9\linewidth]{img/gen/ch4_four_ceilings.pdf}
-  \caption{Search-phase wall time of the default (SoA + f32) build on \texttt{c256\_56gb} across thread counts. Both axes are log-scaled. Shaded areas signify the regimes in which each ceiling binds: (i) single-thread compute / L1 latency at $t \leq 8$, (ii) shared L3 capacity at $t \in [8, 32]$, (iii) on-socket memory-traffic pressure at $t \in [32, 48]$, and (iv) cross-socket UPI interconnect at $t > 48$. Error bars show $95\%$ CIs from the 5-repetition measurements.}
+  \caption[Search-phase wall time and the four ceiling regimes.]{Search-phase wall time of the default (SoA + f32) build on \texttt{c256\_56gb} across thread counts. Both axes are log-scaled. Shaded areas signify the regimes in which each ceiling binds: (i) single-thread compute / L1 latency at $t \leq 8$, (ii) shared L3 capacity at $t \in [8, 32]$, (iii) on-socket memory-traffic pressure at $t \in [32, 48]$, and (iv) cross-socket UPI interconnect at $t > 48$. Error bars show $95\%$ CIs from the 5-repetition measurements.}
   \label{fig:exp:four_ceilings}
 \end{figure}
 
@@ -101,7 +101,7 @@ The results are null or marginal. A fifth latency-side variant, 4-way branchless
 
 \paragraph{The Dependent-Load Chain in \texttt{partition\_point}.}
 
-The hot loop per-cluster is the two binary searches in \texttt{partition\_point} (§\ref{sec:bg:partition_point}). The first search is over the bin-boundary array, the second is over the column slice of the cluster. The size of the bin-boundary array is fixed at ${\sim}142$; the size of the column slice is $n_\text{hists}$. The first fits into two L1d cache lines, the second fits into L2 but exceeds L1d on the larger datasets. Each iteration of each search is a dependent load that must wait for the previous iteration to complete. This dependent load chain \emph{is} the wall time per cluster on this workload.
+The hot loop per-cluster is the two binary searches in \texttt{partition\_point} (§\ref{sec:bg:partition_point}). The first search is over the bin-boundary array, the second is over the column slice of the cluster. The size of the bin-boundary array is fixed at ${\sim}142$, the size of the column slice is $n_\text{hists}$. The first fits into two L1d cache lines, the second fits into L2 but exceeds L1d on the larger datasets. Each iteration of each search is a dependent load that must wait for the previous iteration to complete. This dependent load chain \emph{is} the wall time per cluster on this workload.
 
 \subsection{Ablation A: AVX-512 Leaf-Stage SIMD\label{sec:exp:c1:simd}}
 
@@ -109,7 +109,7 @@ The \texttt{simd} feature replaces the last ${\sim}16$ elements of \texttt{parti
 
 \begin{table}[H]
   \centering
-  \caption{\texttt{simd} vs default, suppress mode, median of 5. Ratio $<$ 1 means \texttt{simd} faster.}
+  \caption[\texttt{simd} vs.\ default.]{\texttt{simd} vs default, suppress mode, median of 5. Ratio $<$ 1 means \texttt{simd} faster.}
   \label{tab:simd}
   \begin{tabular}{lrrrrrr}
     \toprule
@@ -130,7 +130,7 @@ The range of $0.90$--$1.07\times$ is within run-to-run noise across all 18 cells
 
 \begin{table}[H]
   \centering
-  \caption{\texttt{batch-search} vs \texttt{columnar-default}, suppress mode, median of 5. Ratio $<$ 1 means \texttt{batch-search} faster.}
+  \caption[\texttt{batch-search} vs.\ columnar default.]{\texttt{batch-search} vs \texttt{columnar-default}, suppress mode, median of 5. Ratio $<$ 1 means \texttt{batch-search} faster.}
   \label{tab:batchsearch}
   \begin{tabular}{lrrrrrr}
     \toprule
@@ -153,7 +153,7 @@ This does not mean that \texttt{batch-search} is broken, the dependent-load chai
 
 \begin{table}[H]
   \centering
-  \caption{\texttt{horizontal-simd} vs \texttt{columnar-default}, suppress mode, median of 5. Ratio $<$ 1 means \texttt{horizontal-simd} faster.}
+  \caption[\texttt{horizontal-simd} vs.\ columnar default.]{\texttt{horizontal-simd} vs \texttt{columnar-default}, suppress mode, median of 5. Ratio $<$ 1 means \texttt{horizontal-simd} faster.}
   \label{tab:horizsimd}
   \begin{tabular}{lrrrrrr}
     \toprule
@@ -176,7 +176,7 @@ The dependent loads per cluster drop to $O(\log \log n)$ (Since the PGM segment 
 
 \begin{table}[H]
   \centering
-  \caption{\texttt{pgm} vs \texttt{default} (row-centric), suppress mode, median of 5. Ratio $<$ 1 means \texttt{pgm} faster.}
+  \caption[\texttt{pgm} vs.\ default.]{\texttt{pgm} vs \texttt{default} (row-centric), suppress mode, median of 5. Ratio $<$ 1 means \texttt{pgm} faster.}
   \label{tab:pgm}
   \begin{tabular}{lrrrrrr}
     \toprule
@@ -193,17 +193,17 @@ Across all $18$ cells, the range is $0.91$--$1.13\times$. No single cell is an u
 
 \subsection{Mechanism Evidence\label{sec:exp:c1:mechanism}}
 
-Hot-loop counters Per-cluster on the default build (single thread) show the dependent-load chain dominates cycle budget. IPC is $1.80$ on \texttt{c256\_10gb}, $1.93$ on \texttt{c256\_30gb}, $1.87$ on \texttt{c256\_56gb}, all comfortably below the retirement ceiling and points to a load-latency-bound loop. The L1d miss-per-load rate at $t{=}1$ is $\sim\!0.49$--$0.68\%$ across the three datasets. Neither the misprediction rate nor the L1d-miss rate exceed the noise floor that the ablations were designed to reduce.
+Counting hot-loops for each cluster on the default build with $t=1$ show the dependent-load chain dominates cycle budget. IPC is $1.80$ on \texttt{c256\_10gb}, $1.93$ on \texttt{c256\_30gb}, $1.87$ on \texttt{c256\_56gb}, below the retirement ceiling and points to a load-latency-bound loop. The L1d miss-per-load rate at $t{=}1$ is $\sim\!0.49$--$0.68\%$ for all three datasets. Neither the misprediction rate or the L1d-miss rate exceed the noise floor.
 
-This resolves the apparent tension with the chain being the wall time: the binding quantity is the \emph{number} of dependent chains, one per cluster, not the depth or throughput of any single chain (which scales only as $\log_2$ of the bins per cluster). The four ablations shorten or pipeline individual chains; none of them reduces the count. That is why they all measure null.
+That means that the wall time is dominated by the number of dependent-load chains, one per cluster, instead of the depth or throughput of any single chain. The four ablations shorten or pipeline individual chains, none of them reduces the count, which is why they all measure null.
 
-Ceiling~(i) is part of the ceiling taxonomy due to it being the most commonly assumed default ceiling in the published literature on in-memory percentile and binary-search workloads. Kim et al.'s FAST index~\cite{kim_2010} explicitly co-optimises for cache-line, page, and SIMD width on the assumption that L1-latency and CMOV-chain length bind search cost, Khuong and Morin~\cite{khuong_morin_2017} benchmark array layouts under the same assumption, Ferragina and Vinciguerra's PGM~\cite{ferragina_2020} addresses the $\log_2 n$ dependent-load chain as its whole motivation, and Schlegel et al.'s SIMD $k$-ary search~\cite{schlegel_2009} treats the same chain as the cost to be shortened.
+Ceiling~(i) is part of the ceilings due to it being the most commonly assumed ceiling in literature on in-memory binary-search workloads. Kim et al.'s FAST index~\cite{kim_2010} co-optimises for cache-line, page, and SIMD width on the assumption that L1-latency and CMOV-chain length bind search cost, Khuong and Morin~\cite{khuong_morin_2017} benchmark array layouts under the same assumption, Ferragina and Vinciguerra's PGM~\cite{ferragina_2020} addresses the $\log_2 n$ dependent-load chain as its whole motivation, and Schlegel et al.'s SIMD $k$-ary search~\cite{schlegel_2009} treats the same chain as the cost to be shortened.
 
-Our falsification of ceiling~(i) is what gives credit to the other ceilings and gives us the opportunity to set aside the single-thread compute assumption and reason about the other ceilings. This negative result is positive evidence about binding constraints.
+Our falsification of ceiling~(i) is what enables us to explore the other ceilings and gives us the opportunity to set aside the single-thread compute assumption and reason about the other ceilings. This negative result is positive evidence about binding constraints.
 
 \section{Ceiling (ii): Shared L3 Capacity\label{sec:exp:c2}}
 
-The aggregate per-thread working set sums above the L3 shared capacity of $105$\,MiB per socket at moderate thread counts on the \emph{larger} datasets. We observe a thread-scaling curve that shows a bend before saturating the cores. Optimisations that shrink the per-thread footprint should improve this ceiling; optimisations that expand it should worsen it. The mechanism reading (§\ref{sec:exp:c2:mechanism}) refines this picture: what binds at moderate $t$ is regime-dependent, allocator-arena contention on dense clusters and aggregate L3 footprint at the sparser OOD density.
+The aggregate per-thread working set sums above the L3 shared capacity of $105$\,MiB per socket at moderate thread counts on the \emph{larger} datasets. We observe a thread-scaling curve that shows a bend before saturating the cores. Optimisations that shrink the per-thread footprint should improve this ceiling, optimisations that expand it should worsen it. The mechanism reading (§\ref{sec:exp:c2:mechanism}) refines this picture: what binds at moderate $t$ is regime-dependent, allocator-arena contention on dense clusters and aggregate L3 footprint at the sparser OOD density.
 
 \subsection{SoA vs AoS\label{sec:exp:c2:soa}}
 
@@ -211,7 +211,7 @@ The default uses SoA. The \texttt{aos} feature is the negative control: every ca
 
 \begin{table}[H]
   \centering
-  \caption{\texttt{aos} vs default, suppress mode, median of 5 reps. Ratio $>$ 1 means \texttt{aos} slower; ratio $<$ 1 means \texttt{aos} \emph{faster} (bold cells).}
+  \caption[\texttt{aos} vs.\ default.]{\texttt{aos} vs default, suppress mode, median of 5 reps. Ratio $>$ 1 means \texttt{aos} slower, ratio $<$ 1 means \texttt{aos} \emph{faster} (bold cells).}
   \label{tab:aos}
   \begin{tabular}{lrrrrrr}
     \toprule
@@ -233,7 +233,7 @@ Figure~\ref{fig:exp:aos_flip} shows the same measurement as a delta versus defau
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.9\linewidth]{img/gen/ch4_aos_flip.pdf}
-  \caption{AoS layout wall-time delta versus default (SoA + f32) on \texttt{c256\_56gb} across threads. Red bars: AoS slower. Green bars: AoS faster. Error bars show $95\%$ CIs propagated through the delta computation.}
+  \caption[AoS wall-time delta across threads.]{AoS layout wall-time delta versus default (SoA + f32) on \texttt{c256\_56gb} across threads. Red bars: AoS slower. Green bars: AoS faster. Error bars show $95\%$ CIs propagated through the delta computation.}
   \label{fig:exp:aos_flip}
 \end{figure}
 
@@ -245,15 +245,15 @@ Figure~\ref{fig:exp:aos_flip} shows the same measurement as a delta versus defau
   \item Standalone on \texttt{c256\_56gb}: no cell shows a statistically significant \texttt{f16} win. Figure~\ref{fig:exp:f16_finet} shows two significant losses at $t{=}8$ and $t{=}14$, every other cell in the $10$-rep fine-$t$ sweep straddles zero.
   \item Standalone on \texttt{c256\_30gb}: also no clear win. Deltas range from $-12\%$ (at $t{=}96$) to $+3.5\%$ (at $t{=}8$). The predicted L3-footprint win at $t{=}16$ ($+3.1\%$) is a small loss instead.
   \item Inside the bundled \bcombo{} build at $t{=}16$ on \texttt{c256\_56gb}, the bundle runs at $0.773\times$ default wall ($22.7\%$ speedup).
-  \item \texttt{f16} isolation measures \texttt{f16}'s contribution to the bundle: we find a \emph{regime-dependent sign reversal} on the primary workload; \texttt{c256\_56gb} at $t{=}16$, \bcombo{} without \texttt{f16} at $13.54$\,s is $15.6\%$ \emph{faster} than \bcombo{} at $16.03$\,s meaning that \emph{f16} drags the net bundle down (and $-16.2\%$ at $t{=}32$, only at $t{=}64$ and $t{=}96$ does removing \texttt{f16} produce a small $\sim\!3\%$ cost). On the sparser OOD workload \texttt{c1024\_56gb} (§\ref{sec:exp:ood}) at the same $t{=}16$, removing \texttt{f16} costs $+20.9\%$, so \texttt{f16} saves $20.9\%$ inside the bundle.
-  \item The reversal is \emph{density-dependent}. On \texttt{c256\_56gb} the per-cluster f32 slice ($\sim\!105$\,KiB) exceeds L1d and is L2-resident; halving it does not unlock a new cache-resident regime, while paying f16$\to$f32 conversion costs on every comparison. The mechanism is developed further in §\ref{sec:exp:c2:mechanism}.
+  \item \texttt{f16} isolation measures \texttt{f16}'s contribution to the bundle: we find a \emph{regime-dependent sign reversal} on the primary workload, \texttt{c256\_56gb} at $t{=}16$, \bcombo{} without \texttt{f16} at $13.54$\,s is $15.6\%$ \emph{faster} than \bcombo{} at $16.03$\,s meaning that \emph{f16} drags the net bundle down (and $-16.2\%$ at $t{=}32$, only at $t{=}64$ and $t{=}96$ does removing \texttt{f16} produce a small $\sim\!3\%$ cost). On the sparser OOD workload \texttt{c1024\_56gb} (§\ref{sec:exp:ood}) at the same $t{=}16$, removing \texttt{f16} costs $+20.9\%$, so \texttt{f16} saves $20.9\%$ inside the bundle.
+  \item The reversal is \emph{density-dependent}. On \texttt{c256\_56gb} the per-cluster f32 slice ($\sim\!105$\,KiB) exceeds L1d and is L2-resident, halving it does not unlock a new cache-resident regime, while paying f16$\to$f32 conversion costs on every comparison. The mechanism is developed further in §\ref{sec:exp:c2:mechanism}.
   \item \texttt{f16} is a bundle drag that the other five features have to absorb. At the sparser OOD density, \texttt{f16} carries roughly a fifth of the bundle win.
 \end{itemize}
 
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.9\linewidth]{img/gen/ch4_f16_finet.pdf}
-  \caption{\texttt{f16} vs.\ default wall-time delta on \texttt{c256\_56gb}. Saturated bars mark cells where $t$ $95\%$ CI (dof $= n_a + n_b - 2$, §\ref{sec:method:ci}) excludes zero, pale bars are noise-band.}
+  \caption[\texttt{f16} fine-$t$ wall-time delta.]{\texttt{f16} vs.\ default wall-time delta on \texttt{c256\_56gb}. Saturated bars mark cells where $t$ $95\%$ CI (dof $= n_a + n_b - 2$, §\ref{sec:method:ci}) excludes zero, pale bars are noise-band.}
   \label{fig:exp:f16_finet}
 \end{figure}
 
@@ -265,7 +265,7 @@ Figure~\ref{fig:exp:aos_flip} shows the same measurement as a delta versus defau
 
 \begin{table}[H]
   \centering
-  \caption{\texttt{pooled} vs default, suppress mode. Ratio $<1$ means \texttt{pooled} faster.}
+  \caption[\texttt{pooled} vs.\ default.]{\texttt{pooled} vs default, suppress mode. Ratio $<1$ means \texttt{pooled} faster.}
   \label{tab:pooled}
   \begin{tabular}{lrrrrrr}
     \toprule
@@ -288,7 +288,7 @@ The direct \bcombo{}-minus-\texttt{pooled} sweep on \texttt{c256\_56gb} reveals 
 
 \begin{table}[H]
   \centering
-  \caption{\bcombo{}-minus-\texttt{pooled} vs full \bcombo{}. Positive removal cost means \texttt{pooled} was helping the bundle, negative means \texttt{pooled} was \emph{hurting} it.}
+  \caption[\bcombo{}-minus-\texttt{pooled} isolation.]{\bcombo{}-minus-\texttt{pooled} vs full \bcombo{}. Positive removal cost means \texttt{pooled} was helping the bundle, negative means \texttt{pooled} was \emph{hurting} it.}
   \label{tab:pooled_isolation}
   \footnotesize
   \begin{tabular}{lrrrrrr}
@@ -330,7 +330,7 @@ We don't consider either \texttt{mimalloc} or \texttt{pin-cores} to be a ceiling
 
 \section{Ceiling (iii): On-Socket Memory-Traffic Pressure\label{sec:exp:c3}}
 
-At high $t$ on the larger datasets, the DDR5 per-socket bandwidth budget (${\sim}300$\,GB/s) saturates. We observe \emph{anti-scaling}: wall-clock rises while cores are added past the saturation point. Optimisations that could improve this ceiling include reducing bytes-per-emit or bytes-per-comparison.
+At high $t$ on the larger datasets, aggregate memory traffic puts the per-socket memory subsystem under pressure. We observe \emph{anti-scaling}: wall-clock rises while cores are added. Optimisations that could improve this ceiling include reducing bytes-per-emit or bytes-per-comparison.
 
 \paragraph{Anti-Scaling Signature.}\label{sec:exp:c3:anti}
 
@@ -346,7 +346,7 @@ The \texttt{packed-ids} feature compresses the emit-phase ID bandwidth from $32$
 
 \begin{table}[H]
   \centering
-  \caption{\texttt{packed-ids} vs default, suppress mode, median of 5. Ratio $<$ 1 means \texttt{packed-ids} faster.}
+  \caption[\texttt{packed-ids} vs.\ default.]{\texttt{packed-ids} vs default, suppress mode, median of 5. Ratio $<$ 1 means \texttt{packed-ids} faster.}
   \label{tab:packed}
   \begin{tabular}{lrrrrrr}
     \toprule
@@ -382,7 +382,7 @@ Once again, the win pattern follows regimes instead of mechanisms, which is why 
 Four \texttt{numactl} configurations on \texttt{c256\_56gb} with \texttt{--features packed-ids}:
 
 \begin{itemize}
-  \item \textbf{A (unpinned).} Linux first-touch; default scheduler.
+  \item \textbf{A (unpinned).} Linux first-touch, default scheduler.
   \item \textbf{B (single-socket-clean).} \texttt{numactl --cpunodebind=0 --membind=0}. Memory and CPUs on node 0. Only feasible at $t \le 48$ (one socket of physical cores).
   \item \textbf{C (interleave).} \texttt{numactl --interleave=0,1}. Pages striped round-robin across nodes at 4\,KB granularity.
   \item \textbf{D (cross-socket forced).} \texttt{numactl --membind=0 --physcpubind=48..N}. Memory on node 0, CPUs on node 1. Worst case for UPI cost.
@@ -390,7 +390,7 @@ Four \texttt{numactl} configurations on \texttt{c256\_56gb} with \texttt{--featu
 
 \begin{table}[H]
   \centering
-  \caption{NUMA placement probe, \texttt{c256\_56gb}, \texttt{packed-ids} build, suppress mode, median of 5. Wall in seconds.}
+  \caption[NUMA placement probe.]{NUMA placement probe, \texttt{c256\_56gb}, \texttt{packed-ids} build, suppress mode, median of 5. Wall in seconds.}
   \label{tab:numa}
   \begin{tabular}{lrrrr}
     \toprule
@@ -423,7 +423,7 @@ The thread-scaling curve under the default build connects the four ceilings: it 
 
 \begin{table}[H]
   \centering
-  \caption{Default Rust build, suppress mode, median of 5. ``Best/$t{=}1$'' is the speedup at the best thread count vs $t{=}1$.}
+  \caption[Thread scaling of the default build.]{Default Rust build, suppress mode, median of 5. ``Best/$t{=}1$'' is the speedup at the best thread count vs $t{=}1$.}
   \label{tab:thread_scaling}
   \begin{tabular}{lrrrrrrrr}
     \toprule
@@ -438,7 +438,7 @@ The thread-scaling curve under the default build connects the four ceilings: it 
 
 Smaller datasets bend at lower thread counts because per-query work is shorter, more queries are in flight at any moment, and the working set exceeds the shared L3 sooner. 
 
-On \texttt{c256\_10gb} we measure ${\sim}150\,\mu$s per query at $t=1$. At $t=96$ the per-thread work slices are so short that scheduling overhead and cross-thread contention dominate them; the working set itself stays cache-resident, so the bend is not a capacity effect (consistent with ceiling~(ii) never binding on this dataset, §\ref{sec:exp:c2:soa}).
+On \texttt{c256\_10gb} we measure ${\sim}150\,\mu$s per query at $t=1$. At $t=96$ the per-thread work slices are so short that scheduling overhead and cross-thread contention dominate them, the working set itself stays cache-resident, so the bend is not a capacity effect (consistent with ceiling~(ii) never binding on this dataset, §\ref{sec:exp:c2:soa}).
 
 On \texttt{c256\_56gb} we measure ${\sim}25$\,ms per query at $t=1$. Even at $t=96$ the in-flight footprint stays within L3 capacity, so the regression past $t=64$ is not ceiling (ii) but a mix of ceilings (iii) and (iv).
 
@@ -446,7 +446,7 @@ On \texttt{c256\_56gb} we measure ${\sim}25$\,ms per query at $t=1$. Even at $t=
 
 Above $t=96$ the engine maps two Rayon workers onto SMT siblings of the same physical core, and they contend for L1d/L2. This is not prevented by the default Linux scheduler. The \texttt{pin-cores} feature uses \texttt{core\_affinity} to bind one worker per physical core.
 
-Standalone on \texttt{c256\_56gb}, \texttt{pin-cores} wins at $t \leq 32$ and peaks at $-19.2\%$ at $t=32$. At $t=64$ it is neutral ($+1.2\%$); at $t=96$ it regresses to $+7\%$ ($20.10$\,s vs default $18.78$\,s).
+Standalone on \texttt{c256\_56gb}, \texttt{pin-cores} wins at $t \leq 32$ and peaks at $-19.2\%$ at $t=32$. At $t=64$ it is neutral ($+1.2\%$), at $t=96$ it regresses to $+7\%$ ($20.10$\,s vs default $18.78$\,s).
 
 Once all $96$ physical cores are pinned, the affinity mask cannot help further, and the pinning itself removes the scheduler's freedom to migrate threads off a bandwidth-contended socket.
 
@@ -459,7 +459,7 @@ Inside the per-query Rayon task, \texttt{cluster-par} adds a second Rayon scope 
 
 \begin{table}[H]
   \centering
-  \caption{\texttt{cluster-par} vs default. Ratio $>$ 1 means \texttt{cluster-par} slower.}
+  \caption[\texttt{cluster-par} vs.\ default.]{\texttt{cluster-par} vs default. Ratio $>$ 1 means \texttt{cluster-par} slower.}
   \label{tab:clusterpar}
   \begin{tabular}{lrrrrrr}
     \toprule
@@ -498,7 +498,7 @@ We conclude that the columnar engine is only faster than row-centric in the sing
 
 \begin{table}[H]
   \centering
-  \caption{$K$-sensitivity at $t{=}96$ on \texttt{c256\_56gb}, suppress mode, median of 5.}
+  \caption[Query-batch $K$-sensitivity.]{$K$-sensitivity at $t{=}96$ on \texttt{c256\_56gb}, suppress mode, median of 5.}
   \label{tab:qb_k}
   \begin{tabular}{rrrr}
     \toprule
@@ -524,7 +524,7 @@ Morsel-driven scheduling (§\ref{sec:method:impl:morsel}) is a finer-grained mec
 
 \begin{table}[H]
   \centering
-  \caption{\texttt{c256\_56gb}, suppress mode, median of 5. Wall in seconds. Best per row in bold.}
+  \caption[Morsel vs.\ regime-best builds.]{\texttt{c256\_56gb}, suppress mode, median of 5. Wall in seconds. Best per row in bold.}
   \label{tab:morsel}
   \footnotesize
   \begin{tabular}{rrrrrrr}
@@ -548,18 +548,18 @@ The instances of negative composability share the same shape: a coarse mechanism
 
 \begin{table}[H]
   \centering
-  \caption{The five negative-composability instances. Read each row as: baseline composition plus the finer ablation layered on top of it. The full mechanism stories are developed in §\ref{sec:exp:negcomp:arithmetic} and the section cited per row.}
+  \caption[The five negative-composability instances.]{The five negative-composability instances. Read each row as: baseline composition plus the finer ablation layered on top of it. The full mechanism stories are developed in §\ref{sec:exp:negcomp:arithmetic} and the section cited per row.}
   \label{tab:negcomp}
   \footnotesize
   \begin{tabular}{>{\raggedright\arraybackslash}p{0.20\linewidth}>{\raggedright\arraybackslash}p{0.26\linewidth}>{\raggedright\arraybackslash}p{0.15\linewidth}>{\raggedright\arraybackslash}p{0.28\linewidth}}
     \toprule
     Composition & Binding ceiling at baseline & Intended axis & Outcome \\
     \midrule
-    \bcombo{} $+$ \texttt{packed-ids} (§\ref{sec:exp:c3:packed}) & mem-traffic; \texttt{f16} and \texttt{pooled} had already collected it & emit-phase ID bandwidth & NEG in 12/18 cells, up to $+24\%$ at low $t$ \\
-    \bcombo{} $+$ qbatch $K{=}128$ (§\ref{sec:exp:wf:qb}) & mem-traffic; \texttt{f16} halved the cold-load size & cold-load occurrences & NEG at every \texttt{c256\_56gb} cell, $+8$ to $+32\%$ \\
+    \bcombo{} $+$ \texttt{packed-ids} (§\ref{sec:exp:c3:packed}) & mem-traffic, \texttt{f16} and \texttt{pooled} had already collected it & emit-phase ID bandwidth & NEG in 12/18 cells, up to $+24\%$ at low $t$ \\
+    \bcombo{} $+$ qbatch $K{=}128$ (§\ref{sec:exp:wf:qb}) & mem-traffic, \texttt{f16} halved the cold-load size & cold-load occurrences & NEG at every \texttt{c256\_56gb} cell, $+8$ to $+32\%$ \\
     qbatch $+$ morsel (§\ref{sec:exp:wf:morsel}) & shared L3 absorbs cross-task cold-loads & cross-worker coordination & NEG at every cell, $+8$ to $+12\%$ \\
-    \texttt{packed-ids} $+$ \texttt{local-ids} (§\ref{sec:exp:reindex}) & mem-traffic; the $\text{bw}{\approx}20$ decoder had collected the read-side saving & read-side bandwidth & NEG, $+186$ to $+245\%$ at $t \in [8,64]$; dTLB miss rate $52\times$ (§\ref{sec:exp:reindex:mechanism}) \\
-    first-touch $+$ interleave (§\ref{sec:exp:c4}) & UPI; first-touch keeps each cluster node-contiguous & memory-locality balancing & NEG at every cell, $+26$ to $+41\%$; defeats the prefetcher \\
+    \texttt{packed-ids} $+$ \texttt{local-ids} (§\ref{sec:exp:reindex}) & mem-traffic, the $\text{bw}{\approx}20$ decoder had collected the read-side saving & read-side bandwidth & NEG, $+186$ to $+245\%$ at $t \in [8,64]$, dTLB miss rate $52\times$ (§\ref{sec:exp:reindex:mechanism}) \\
+    first-touch $+$ interleave (§\ref{sec:exp:c4}) & UPI, first-touch keeps each cluster node-contiguous & memory-locality balancing & NEG at every cell, $+26$ to $+41\%$, defeats the prefetcher \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -597,13 +597,13 @@ The pre-flight check of the five instances is a five-step process:
 
 \subsection{Methodology and Recipe\label{sec:exp:negcomp:methodology}}
 
-The description of a deployment recipe in §\ref{sec:exp:dispatch} serves as a useful artefact for this codebase; while the methodology in §\ref{sec:exp:negcomp} is a useful artefact for future ablation campaigns on hardware-near workloads.
+The description of a deployment recipe in §\ref{sec:exp:dispatch} serves as a useful artefact for this codebase, while the methodology in §\ref{sec:exp:negcomp} is a useful artefact for future ablation campaigns on hardware-near workloads.
 
 Our finding is ``the pattern exists on hardware-near composition'', instead of the black-and-white ``every ablation composes negatively''. A falsification to this pattern would be an ablation that composes positively against a baseline whose binding ceiling it explicitly does not address.
 
 \section{Per-Cluster Reindexing (Falsified Prediction)\label{sec:exp:reindex}}
 
-§\ref{sec:exp:c3:packed}'s \texttt{packed-ids} addressed the emit-phase bandwidth by bit-packing global histogram IDs at ${\sim}20$ bits. An obvious continuation would have been per-cluster local IDs; since each cluster holds at most a few thousand histograms, a local-id encoding could drop us to ${\sim}13$ bits, saving an additional $35\%$ on the read side. This prediction was falsified by the controlled measurement in this section. 
+§\ref{sec:exp:c3:packed}'s \texttt{packed-ids} addressed the emit-phase bandwidth by bit-packing global histogram IDs at ${\sim}20$ bits. An obvious continuation would have been per-cluster local IDs, since each cluster holds at most a few thousand histograms, a local-id encoding could drop us to ${\sim}13$ bits, saving an additional $35\%$ on the read side. This prediction was falsified by the controlled measurement in this section. 
 
 We consider this the most detailed example of the multi-variant decomposition that the pre-flight methodology (§\ref{sec:exp:negcomp:preflight}) recommends.
 
@@ -613,7 +613,7 @@ Per-emit memory traffic in row-centric SoA, written as (read width $+$ write wid
 
 \begin{table}[H]
   \centering
-  \caption{Pre-registered bandwidth-budget arithmetic for the four variants.}
+  \caption[Pre-registered bandwidth-budget arithmetic.]{Pre-registered bandwidth-budget arithmetic for the four variants.}
   \label{tab:reindex_budget}
   \footnotesize
   \begin{tabular}{lrrrr}
@@ -643,7 +643,7 @@ We use a four-variant decomposition (§\ref{sec:method:impl:packed}) to isolate 
 
 \begin{table}[H]
   \centering
-  \caption{\texttt{c256\_56gb}, row-centric engine, suppress mode, median of 5 reps.}
+  \caption[Per-cluster reindexing results.]{\texttt{c256\_56gb}, row-centric engine, suppress mode, median of 5 reps.}
   \label{tab:reindex_results}
   \footnotesize
   \begin{tabular}{rrrrrr}
@@ -668,7 +668,7 @@ Regressions of $2.5$--$3.7\times$ against \texttt{packed-ids} at multi-thread ce
 
 This is confirmed by \texttt{perf} probes. A \texttt{perf stat -e dtlb\_load\_misses.\allowbreak walk\_completed} probe at $t=16$ on the primary workload measured $109$\,M dTLB-load misses over $2.35$\,T retired instructions ($0.005\%$ miss-per-instruction) under \texttt{packed-ids} versus $10.5$\,B dTLB-load misses over $4.28$\,T retired instructions ($0.245\%$ miss-per-instruction) under \texttt{local-ids}. 
 
-The miss rate per instruction is $\sim\!52\times$ higher under \texttt{local-ids}, and the wall-time ratio at the same cell is $7.6\times$.  The access pattern per-emit is shifted by the narrower decoder from ${\sim}20$-bit-aligned strides to ${\sim}13$-bit-aligned strides. That crosses the boundaries of the $4$\,KiB pages far more frequently, exhausting the dTLB at the multi-thread cells. TLB-walk stalls drown the bandwidth saving by more than an order of magnitude.
+The miss rate per instruction is $\sim\!52\times$ higher under \texttt{local-ids}, and the wall-time ratio at the same cell is $3.4\times$.  The access pattern per-emit is shifted by the narrower decoder from ${\sim}20$-bit-aligned strides to ${\sim}13$-bit-aligned strides. That crosses the boundaries of the $4$\,KiB pages far more frequently, exhausting the dTLB at the multi-thread cells. TLB-walk stalls drown the bandwidth saving by more than an order of magnitude.
 
 The bandwidth-budget arithmetic correctly predicted the read-side bandwidth saving, but not the TLB-walk cost.
 
@@ -695,7 +695,7 @@ The dispatch policy is a build selection keyed on regime, derived from the measu
 The build set in the current policy:
 
 \begin{itemize}
-  \item \texttt{default} (control; selected only at $t=1$ on small data).
+  \item \texttt{default} (control, selected only at $t=1$ on small data).
   \item \bcombo{} = \texttt{pooled f16 simd pin-cores cluster-prefetch mimalloc}. The bundle that addresses ceilings (ii)--(iv) at moderate $t$ on large data.
   \item \texttt{packed-ids}. The emit-phase bandwidth optimisation, regime-best at $t{=}64$ on big data.
   \item \texttt{query-batch} with \texttt{FAINDER\_QUERY\_BATCH=64} or $128$. Work-fragmentation, regime-best at $t{=}96$ on big data.
@@ -703,7 +703,9 @@ The build set in the current policy:
 
 \subsection{In-Distribution Validation}
 
-The policy reproduces the regime-best build at each cell of the $(n_\text{hists}, n_\text{threads})$ grid. It is within $5\%$ of the regime-best wall time in $17/18$ cells, and within $0\%$ in the remaining cell. The single non-zero gap is a $+4.7\%$ gap on \texttt{c256\_30gb} at $t{=}64$, which is inside the run-to-run variance band at that thread count.
+The policy picks the empirical regime-best build in $17$ of $18$ cells of the $(n_\text{hists}, n_\text{threads})$ grid. The remaining cell is within $5\%$: a $+4.7\%$ gap on \texttt{c256\_30gb} at $t{=}64$, inside the run-to-run variance band at that thread count.
+
+Because the policy's boundaries are read off the calibration grid itself, this in-distribution record confirms that the boundaries were derived consistently. The validation is the out-of-distribution point in §\ref{sec:exp:ood}, which the policy was never designed for.
 
 \section{Out-of-Distribution Validation at \texttt{c1024\_56gb}\label{sec:exp:ood}}
 
@@ -717,7 +719,7 @@ Five candidate builds at six thread counts, five reps each, suppress mode. Total
 
 \begin{table}[H]
   \centering
-  \caption{Dispatch validation at \texttt{c1024\_56gb}. ``Gap'' is the wall-time gap between the policy's pick and the empirical regime-best for that cell.}
+  \caption[Dispatch validation at the OOD point.]{Dispatch validation at \texttt{c1024\_56gb}. ``Gap'' is the wall-time gap between the policy's pick and the empirical regime-best for that cell.}
   \label{tab:ood_dispatch}
   \begin{tabular}{rlrlrr}
     \toprule
@@ -744,7 +746,7 @@ Eight builds and two NUMA placements were measured at the relevant thread counts
 
 \begin{table}[H]
   \centering
-  \caption{Eight pre-registered claims, eight verdicts after 5-rep 95\% CI checks. Density range tested: ${\sim}8\,200$ to ${\sim}26\,300$ hists/cluster ($3.2\times$).}
+  \caption[OOD structural-validation verdicts.]{Eight pre-registered claims, eight verdicts after 5-rep 95\% CI checks. Density range tested: ${\sim}8\,200$ to ${\sim}26\,300$ hists/cluster ($3.2\times$).}
   \label{tab:ood_struct}
   \footnotesize
   \begin{tabular}{>{\raggedright\arraybackslash}p{0.05\linewidth}>{\raggedright\arraybackslash}p{0.30\linewidth}>{\raggedright\arraybackslash}p{0.30\linewidth}>{\raggedright\arraybackslash}p{0.25\linewidth}}
@@ -752,8 +754,8 @@ Eight builds and two NUMA placements were measured at the relevant thread counts
     § & Claim & \texttt{c1024\_56gb} outcome & Verdict \\
     \midrule
     §\ref{sec:exp:c1} & Ceiling (i), \texttt{simd} null & $6/6$ cells within $95\%$ CI of default & Reproduces (clean null) \\
-    §\ref{sec:exp:c2} & Ceiling (ii), \texttt{f16} win + \texttt{aos} loss & \texttt{f16} standalone: sign-flip ($-13\%$).\newline \texttt{aos}: reproduces ($-29\%$).\newline Bundle: wins $-18\%$; \texttt{f16} contribution CI straddles zero & Refined (density-dependent L3 threshold) \\
-    §\ref{sec:exp:c4} & Ceiling (iv): single-socket $-12\%$; interleave $+34$ to $+40\%$ & single-socket $-12.4\%$ at $t{=}32$;\newline interleave $+34$ to $+40\%$ at every cell & Reproduces (density-invariant) \\
+    §\ref{sec:exp:c2} & Ceiling (ii), \texttt{f16} win + \texttt{aos} loss & \texttt{f16} standalone: sign-flip ($-13\%$).\newline \texttt{aos}: reproduces ($-29\%$).\newline Bundle: wins $-18\%$, \texttt{f16} contribution CI straddles zero & Refined (density-dependent L3 threshold) \\
+    §\ref{sec:exp:c4} & Ceiling (iv): single-socket $-12\%$, interleave $+34$ to $+40\%$ & single-socket $-12.4\%$ at $t{=}32$;\newline interleave $+34$ to $+40\%$ at every cell & Reproduces (density-invariant) \\
     §\ref{sec:exp:c3:packed} comp. & NEG (\bcombo{} $+$ \texttt{packed-ids}) & $2/5$ NEG;\newline $1/5$ small positive;\newline $2/5$ noise-floor & Consistent with c256 \\
     §\ref{sec:exp:wf:qb} comp. & NEG (\bcombo{} $+$ qbatch $K{=}128$) & $5/5$ NEG, $+16$ to $+44\%$\newline (c256: $+8$ to $+32\%$) & Strong reproduction (amplified) \\
     §\ref{sec:exp:wf:morsel} & NEG (qbatch $+$ morsel) & $5/5$ CIs straddle zero & Attenuated to within-noise \\
@@ -764,7 +766,7 @@ Eight builds and two NUMA placements were measured at the relevant thread counts
 \end{table}
 
 \paragraph{Tally.}
-$4/8$ strong reproductions (ceiling (iv), §\ref{sec:exp:wf:qb} composition, §\ref{sec:exp:reindex}, §\ref{sec:exp:c4} composition); $2/8$ clean reproductions (ceiling (i) simd null. §\ref{sec:exp:c3:packed} composition mixed at both densities). $2/8$ refinements that change the c256 reading at c1024 (ceiling (ii) \texttt{f16} standalone sign-flips but the bundle still wins. §\ref{sec:exp:wf:morsel} attenuates to within-noise). $0/8$ outright falsifications.
+$4/8$ strong reproductions (ceiling (iv), §\ref{sec:exp:wf:qb} composition, §\ref{sec:exp:reindex}, §\ref{sec:exp:c4} composition), $2/8$ clean reproductions (ceiling (i) simd null. §\ref{sec:exp:c3:packed} composition mixed at both densities). $2/8$ refinements that change the c256 reading at c1024 (ceiling (ii) \texttt{f16} standalone sign-flips but the bundle still wins. §\ref{sec:exp:wf:morsel} attenuates to within-noise). $0/8$ outright falsifications.
 
 \paragraph{Findings.}
 
@@ -795,11 +797,11 @@ Denser regimes (\texttt{c64\_56gb} at ${\sim}78$K hists/cluster) or sparser (\te
 \section{\bcombo{} vs Python Baseline\label{sec:exp:e2e}}
 
 
-The structural findings of this thesis do not depend on the engineering-deliverable speedup over Python being any particular value. The comparison is reported here for completeness. The decomposition in §\ref{sec:exp:e2e:mat} shows that most of the end-to-end speedup is Python-side result-materialisation avoidance rather than engine-vs-engine search superiority; only the residual search-phase ratio reflects the four-ceiling-aware engineering that the rest of this chapter characterises.
+The structural findings of this thesis do not depend on the engineering-deliverable speedup over Python being any particular value. The comparison is reported here for completeness. The decomposition in §\ref{sec:exp:e2e:mat} shows that most of the end-to-end speedup is Python-side result-materialisation avoidance rather than engine-vs-engine search superiority, only the residual search-phase ratio reflects the four-ceiling-aware engineering that the rest of this chapter characterises.
 
 \begin{table}[H]
   \centering
-  \caption{Speedup at $t{=}16$ across the three calibration datasets. Rust wall is the \bcombo{} bundle. Python is GIL-bound and flat across thread counts (§\ref{sec:exp:python:wall}). One $t{=}16$ measurement per dataset is therefore representative of any $t$. All walls are 5-rep medians.}
+  \caption[Speedup vs.\ the Python baseline at $t{=}16$.]{Speedup at $t{=}16$ across the three calibration datasets. Rust wall is the \bcombo{} bundle. Python is GIL-bound and flat across thread counts (§\ref{sec:exp:python:wall}). One $t{=}16$ measurement per dataset is therefore representative of any $t$. All walls are 5-rep medians.}
   \label{tab:e2e}
   \footnotesize
   \setlength{\tabcolsep}{3pt}
@@ -823,7 +825,7 @@ We observe two things:
   \item The end-to-end column ($530$--$598\times$) is not search-phase engineering, but Python-side result-materialisation avoidance.
 \end{enumerate}
 
-At the only single-thread cell with a paired Python run (\texttt{c256\_10gb}, $t{=}1$), the end-to-end speedup is $114\times$ ($610.2$\,s vs $5.37$\,s); single-thread coverage on the larger datasets is not part of the campaign.
+At the only single-thread cell with a paired Python run (\texttt{c256\_10gb}, $t{=}1$), the end-to-end speedup is $114\times$ ($610.2$\,s vs $5.37$\,s), single-thread coverage on the larger datasets is not part of the campaign.
 
 \subsection{Python's Result-Materialisation Cost\label{sec:exp:e2e:mat}}
 
@@ -837,22 +839,22 @@ The mechanism behind the two modes is described in §\ref{sec:method:suppress}. 
 
 The search phase itself only takes $18.8$\,s, $11.9$\,s, and $21.5$\,s respectively, so the end-to-end speedup is dominated by Python's materialisation cost instead of Rust's search-phase cost.
 
-An interesting observation is that the search-phase wall does not scale naively with the number of histograms, as evident by the walls of \texttt{c256\_10gb}/\texttt{c256\_30gb} having an inverted scaling ($18.8$\,s on the smaller dataset vs $11.9$\,s on the $3\times$ larger one). This is explained by Python's per-cluster fast-path in \texttt{query\_local\_index}; it skips \texttt{numpy.searchsorted} entirely when a query's reference value falls outside a cluster's bin range. So the more queries that fall outside the clusters, the more often the fast-path is taken, leading to a lower overall wall time despite having more histograms.
+An interesting observation is that the search-phase wall does not scale naively with the number of histograms, as evident by the walls of \texttt{c256\_10gb}/\texttt{c256\_30gb} having an inverted scaling ($18.8$\,s on the smaller dataset vs $11.9$\,s on the $3\times$ larger one). This is explained by Python's per-cluster fast-path in \texttt{query\_local\_index}, it skips \texttt{numpy.searchsorted} entirely when a query's reference value falls outside a cluster's bin range. So the more queries that fall outside the clusters, the more often the fast-path is taken, leading to a lower overall wall time despite having more histograms.
 
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.9\linewidth]{img/gen/ch4_e2e_speedup.pdf}
-  \caption{Rust \bcombo{} speedup over the Python baseline at $t=16$ across the three calibration workloads, End-to-end (with-results) stays in the $530$--$598\times$ range because of Python's per-\emph{(query, cluster)} result-dict construction. Search phase alone (suppress) drops monotonically from $22.7\times$ $\to$ $1.34\times$. Log $y$-axis.}
+  \caption[End-to-end and search-phase speedup over Python.]{Rust \bcombo{} speedup over the Python baseline at $t=16$ across the three calibration workloads, End-to-end (with-results) stays in the $530$--$598\times$ range because of Python's per-\emph{(query, cluster)} result-dict construction. Search phase alone (suppress) drops monotonically from $22.7\times$ $\to$ $1.34\times$. Log $y$-axis.}
   \label{fig:exp:e2e_speedup}
 \end{figure}
 
 \section{Rust Rebinning Kernel\label{sec:exp:rebinning}}
 
-We fuse the two stages of the Python rebinning (per-histogram rebinning under \texttt{multiprocessing.Pool}, then \texttt{numpy.cumsum} + \texttt{argsort(axis=0)} per cluster) into a single-threaded, in-place Rust call. Rust parallelizes the rebinning across all cores, followed by in-place cumsum and a stable \texttt{sort\_by}.
+We fuse the two stages of the Python rebinning (per-histogram rebinning under \texttt{multiprocessing.Pool}, then \texttt{numpy.cumsum} + \texttt{argsort(axis=0)} per cluster) into a single fused Rust call per cluster. The kernel parallelises the rebinning across all cores, followed by in-place cumsum and a stable \texttt{sort\_by}.
 
 \begin{table}[H]
   \centering
-  \caption{Rebinning kernel wall across the three calibration datasets, median of 3 reps.}
+  \caption[Rebinning kernel wall times.]{Rebinning kernel wall across the three calibration datasets, median of 3 reps.}
   \label{tab:rebin}
   \footnotesize
   \begin{tabular}{lrrr}
@@ -884,7 +886,7 @@ Table~\ref{tab:exp:hyp_verdicts} revisits the a-priori hypotheses of §\ref{sec:
 
 \begin{table}[H]
   \centering
-  \caption{Hypotheses from Chapter~\ref{cha:chapter3} and their verdicts.}
+  \caption[Hypotheses and their verdicts.]{Hypotheses from Chapter~\ref{cha:chapter3} and their verdicts.}
   \label{tab:exp:hyp_verdicts}
   \footnotesize
   \begin{tabular}{>{\raggedright\arraybackslash}p{0.30\linewidth}>{\raggedright\arraybackslash}p{0.16\linewidth}>{\raggedright\arraybackslash}p{0.42\linewidth}}
@@ -892,22 +894,22 @@ Table~\ref{tab:exp:hyp_verdicts} revisits the a-priori hypotheses of §\ref{sec:
     Hypothesis & Verdict & Evidence \\
     \midrule
     (i) Latency-side throughput reduces wall at every $t$ & Falsified & Four null ablations, $0.90$--$1.13\times$ across all cells (§\ref{sec:exp:c1}) \\
-    (ii) Footprint reduction wins at intermediate $t$ & Refined & Binding constraint is regime-dependent: arena-mutex contention on the primary workload, L3-aggregate footprint at the OOD density; \texttt{f16} and \texttt{pooled} sign-flip inside the bundle (§\ref{sec:exp:c2}) \\
-    (iii) Bandwidth reduction wins at high $t$ & Confirmed standalone; falsified in composition & \texttt{packed-ids} $-20\%$ standalone at high $t$; regresses over \bcombo{} in 12/18 cells (§\ref{sec:exp:c3}, §\ref{sec:exp:negcomp:instances}) \\
-    (iv) NUMA probe separates on-socket pressure from UPI & Confirmed & Single-socket $-11$ to $-13\%$; interleave $+26$ to $+41\%$ (§\ref{sec:exp:c4}) \\
+    (ii) Footprint reduction wins at intermediate $t$ & Refined & Binding constraint is regime-dependent: arena-mutex contention on the primary workload, L3-aggregate footprint at the OOD density, \texttt{f16} and \texttt{pooled} sign-flip inside the bundle (§\ref{sec:exp:c2}) \\
+    (iii) Bandwidth reduction wins at high $t$ & Confirmed standalone, falsified in composition & \texttt{packed-ids} $-20\%$ standalone at high $t$, regresses over \bcombo{} in 12/18 cells (§\ref{sec:exp:c3}, §\ref{sec:exp:negcomp:instances}) \\
+    (iv) NUMA probe separates on-socket pressure from UPI & Confirmed & Single-socket $-11$ to $-13\%$, interleave $+26$ to $+41\%$ (§\ref{sec:exp:c4}) \\
     Five predictions of positive composition & All falsified & Five instances on five hardware axes (§\ref{sec:exp:negcomp:instances}) \\
     Dispatch within $5\%$ in-distribution & Confirmed & $17/18$ exact, $18/18$ within $5\%$ (§\ref{sec:exp:dispatch}) \\
-    OOD generalisation at the sparser density point & Confirmed & $6/6$ within $1\%$; $4$ strong $+$ $2$ clean reproductions, $2$ refinements, $0$ falsifications (§\ref{sec:exp:ood}) \\
+    OOD generalisation at the sparser density point & Confirmed & $6/6$ within $1\%$, $4$ strong $+$ $2$ clean reproductions, $2$ refinements, $0$ falsifications (§\ref{sec:exp:ood}) \\
     \bottomrule
   \end{tabular}
 \end{table}
 
-Four ceilings bind Fainder's percentile workload on this platform: single-thread compute / L1 latency (which never binds in practice), shared L3 capacity, on-socket memory-traffic pressure, and the cross-socket UPI interconnect. The latency-side optimisations (SIMD, batch-search, horizontal-SIMD, PGM) all measure null: they accelerate a stage that does not bind. The bandwidth-side optimisations (\texttt{f16}, \texttt{packed-ids}, \texttt{pooled}, \texttt{mimalloc}) and single-socket placement each move wall on their own ceiling.
+Four ceilings bind Fainder's percentile workload on this platform: single-thread compute / L1 latency, shared L3 capacity, on-socket memory-traffic pressure, and the cross-socket UPI interconnect. Latency optimisations (SIMD, batch-search, horizontal-SIMD, PGM) all measured null. Bandwidth optimisations (\texttt{f16}, \texttt{packed-ids}, \texttt{pooled}, \texttt{mimalloc}) and single-socket placement each moved the wall on their own ceiling.
 
-These optimisations compose negatively. We show five instances on five hardware axes with respective \emph{perf} counters as evidence. It shows: the ceiling that binds at the composition is \emph{not} the one the second ablation attacks. This leads to the pre-flight methodology, where we probe the binding ceiling at the target composition before committing to an implementation.
+The composition of these optimisations is negative. Five instances on five hardware axes are the proof, alongside their respective \texttt{perf} counters. The ceiling that binds at the composition is \emph{not} the one the second ablation tries to address. This leads to the pre-flight methodology, where we probe the binding ceiling at the target composition before committing to an implementation.
 
-The dispatch policy holds in-distribution ($17/18$ exact, $18/18$ within $5\%$) and out-of-distribution ($6/6$ within $5\%$ at $3.2\times$ sparser clusters). Ceilings (i) and (iv) reproduce across density while ceiling (ii) has a density-dependent threshold. Four of the five negative-composability instances reproduce in sign at the OOD point, and morsel scheduling attenuates to within-noise.
+The dispatch policy is valid in-distribution ($17/18$ exact, $18/18$ within $5\%$) and out-of-distribution ($6/6$ within $5\%$ at $3.2\times$ sparser clusters). Ceilings (i) and (iv) reproduce across density while ceiling (ii) has a density-dependent threshold. Four of the five negative-composability instances reproduce at the OOD point, and morsel scheduling attenuates to within-noise.
 
-The Rust port that carried these measurements delivers $530$--$598\times$ end-to-end over the Python baseline at $t=16$, and $114\times$ at the only paired single-thread cell. Most of that ratio is Python's per-\emph{(query, cluster)} result materialisation ($96.9$--$99.8\%$ of its wall, §\ref{sec:exp:e2e:mat}). The search phase itself scales $22.7\times$, $4.6\times$, $1.34\times$ as per-cluster footprint grows into the shared ceilings. NUMA placement adds $11$--$13\%$ at $t \leq 48$, and the rebinning kernel a separate $\sim\!4.7\times$, dropping to $\sim\!2.2\times$ at five million histograms (§\ref{sec:exp:rebinning}).
+The Rust port that carried these measurements delivers $530$--$598\times$ end-to-end over the Python baseline at $t=16$, and $114\times$ at the only paired single-thread cell. Most of that ratio is Python's per-\emph{(query, cluster)} result materialisation ($96.9$--$99.8\%$ of its wall, §\ref{sec:exp:e2e:mat}). The search phase itself scales $22.7\times$, $4.6\times$, $1.34\times$ as the dataset grows. NUMA placement adds $11$--$13\%$ at $t \leq 48$, and the rebinning kernel a separate $\sim\!4.7\times$, dropping to $\sim\!2.2\times$ at five million histograms (§\ref{sec:exp:rebinning}).
 
 What generalises beyond this codebase is the ceiling characterisation, the composition pattern, and the pre-flight methodology. The Rust port is the medium that produced them.

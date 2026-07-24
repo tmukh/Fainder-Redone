@@ -16,7 +16,7 @@ The hardware configuration is as follows
     \item \textbf{CPU:} 2$\times$ Intel Xeon Platinum 8468H (Sapphire Rapids-SP), 96 physical cores, 192 logical cores, 105\,MiB L3 cache per socket, 48\,KiB L1d and 2\,MiB L2 caches per core, AVX-512 including AVX-512\_FP16.
     \item \textbf{Memory:} 1\,TB DDR5-4800, 8 channels per socket, $\sim\!300$\,GB/s per-socket peak bandwidth, $\sim\!600$\,GB/s aggregate.
     \item \textbf{Interconnect:} Ultra-Path Interconnect (UPI) between sockets, NUMA distance $10$ for local access, $21$ for cross-socket access ($\sim\!2.1\times$ latency penalty on remote loads).
-    \item \textbf{NUMA topology:} two nodes, one per socket. Node~0 holds logical CPUs $0$--$47$ with SMT siblings $96$--$143$; node~1 holds $48$--$95$ with siblings $144$--$191$.
+    \item \textbf{NUMA topology:} two nodes, one per socket. Node~0 holds logical CPUs $0$--$47$ with SMT siblings $96$--$143$, node~1 holds $48$--$95$ with siblings $144$--$191$.
     \item \textbf{Storage:} NVMe SSD (dataset loads) and a RAM-backed tmpfs at \texttt{/dev/shm}.
     \item \textbf{Operating System:} Ubuntu 22.04.5 LTS, Linux kernel 5.15.0-176-generic, glibc 2.35.
 \end{itemize}
@@ -59,7 +59,7 @@ In the naming convention, the first number is the K-means target $k$, and the se
 
 \begin{table}[H]
 \centering
-\caption{The four calibration and OOD datasets. The primary workload is \texttt{c256\_56gb} on which the findings are established. \texttt{c1024\_56gb} is the out-of-distribution density point (§\ref{sec:exp:ood}). \emph{Raw Parquet} is the source data size, \emph{per-cluster f32} the working-set footprint of a single cluster's column slice at f32 precision.}
+\caption[The four evaluation datasets.]{The four calibration and OOD datasets. The primary workload is \texttt{c256\_56gb} on which the findings are established. \texttt{c1024\_56gb} is the out-of-distribution density point (§\ref{sec:exp:ood}). \emph{Raw Parquet} is the source data size, \emph{per-cluster f32} the working-set footprint of a single cluster's column slice at f32 precision.}
 \label{tab:method:datasets}
 \scriptsize
 \setlength{\tabcolsep}{3pt}
@@ -92,7 +92,7 @@ Each ablation is mapped onto one or more Cargo feature flags. In table~\ref{tab:
 
 \begin{table}[H]
 \centering
-\caption{Cargo feature flags exercised in the ablation matrix. Each flag targets a specific ceiling, the mapping is documented in §\ref{sec:method:hypotheses}.}
+\caption[Cargo feature flags in the ablation matrix.]{Cargo feature flags exercised in the ablation matrix. Each flag targets a specific ceiling, the mapping is documented in §\ref{sec:method:hypotheses}.}
 \label{tab:method:cargo}
 \footnotesize
 \begin{tabular}{l>{\raggedright\arraybackslash}p{8.2cm}}
@@ -110,19 +110,19 @@ Flag & Effect \\
 \texttt{mimalloc}      & mimalloc allocator with per-thread sharded free-lists \\
 \texttt{query-batch}   & Column-centric inner loop within K-query batches (K per env var, default 64) \\
 \texttt{morsel}        & Phase-aligned cooperative-caching scheduler (Chase--Lev) \\
-\texttt{local-ids}, \texttt{-bench}, \texttt{-noalloc} & Per-cluster identifier reindexing (three mutually-exclusive variants; §\ref{sec:method:impl:packed}) \\
+\texttt{local-ids}, \texttt{-bench}, \texttt{-noalloc} & Per-cluster identifier reindexing (three mutually-exclusive variants §\ref{sec:method:impl:packed}) \\
 \texttt{horizontal-simd} & AVX-512 over 16 queries in lockstep (Polychroniou-style) \\
 \texttt{pgm}           & Learned-index acceleration of binary search \\
 \bottomrule
 \end{tabular}
 
 \vspace{0.5em}
-\noindent The composed build \bcombo{} is not a Cargo feature but a build-preset shorthand for the combination \texttt{--features "pooled f16 simd pin-cores cluster-prefetch mimalloc"} (the integrated optimum used throughout Chapter~\ref{cha:chapter4}; named \texttt{bestofsuite} in the artefact and in the measurement-database labels).
+\noindent The composed build \bcombo{} is not a Cargo feature but a build-preset shorthand for the combination \texttt{--features "pooled f16 simd pin-cores cluster-prefetch mimalloc"} (the integrated optimum used throughout Chapter~\ref{cha:chapter4} named \texttt{bestofsuite} in the artefact and in the measurement-database labels).
 \end{table}
 
 \subsection{Layout and Search Variants\label{sec:method:impl:variants}}
 
-The concepts of SoA, AoS, and SIMD are introduced in Chapter~\ref{cha:chapter2}. Below we describe the implementation of each as a Cargo-feature-gated variant of the \texttt{SubIndex} struct and the leaf-stage binary-search function. The Eytzinger BFS layout and the 4-way branchless k-ary search were part of an earlier campaign; both were dropped from the final integrated build and are not part of the final measurement campaign.
+The concepts of SoA, AoS, and SIMD are introduced in Chapter~\ref{cha:chapter2}. Below we describe the implementation of each as a Cargo-feature-gated variant of the \texttt{SubIndex} struct and the leaf-stage binary-search function. The Eytzinger BFS layout and the 4-way branchless k-ary search were part of an earlier campaign, both were dropped from the final integrated build and are not part of the final measurement campaign.
 
 The default build's SoA's \texttt{SubIndex} is column-major: so for a cluster with $n$ histograms and $b$ bin boundaries, the array of values hold $n \times b$ f32 values, so that all values for boundary $k$ occupy the slice \texttt{values[k*n .. (k+1)*n]}, and the array of identifiers is separate.
 
@@ -213,14 +213,14 @@ Another (v2) attempt using flat-buffer plus chunk-index (\texttt{Vec<u32>} plus 
   steal/.style={-Latex, dashed, thick, red!65!black}
 ]
 
-% ----- Preload banner (main thread, one-shot before workers spawn) -----
+%  : -- Preload banner (main thread, one-shot before workers spawn)  : --
 \node[align=center, font=\scriptsize\itshape] at (4.25, 4.55) {main thread pre-loads morsels round-robin (LPT-sorted, phase-major) before spawning workers};
 \draw[preload] (0.3, 4.15) -- (0.3, 1.9);
 \draw[preload] (5.0, 4.15) -- (5.0, 1.9);
 \draw[preload] (10.0, 4.15) -- (10.0, 1.9);
 \node[actlbl, green!35!black, anchor=west] at (0.4, 3.85) {push (back)};
 
-% ----- W1 (owner busy) -----
+%  : -- W1 (owner busy)  : --
 \node[worker] (w1) at (0, 3.2) {$W_1$};
 \foreach \i/\n in {1/{$m_1$}, 2/{$m_2$}, 3/{$m_3$}, 4/{$m_4$}} {
   \node[morsel] at ({-1.5 + (\i-1)*0.6}, 1.5) {\n};
@@ -230,7 +230,7 @@ Another (v2) attempt using flat-buffer plus chunk-index (\texttt{Vec<u32>} plus 
 \node[endlbl] at (0.3, 0.95) {back};
 \draw[pop] (-1.5, 1.85) to[out=90, in=-90] node[actlbl, left, pos=0.45] {pop} (-0.35, 2.75);
 
-% ----- W2 (owner busy) -----
+%  : -- W2 (owner busy)  : --
 \node[worker] (w2) at (5, 3.2) {$W_2$};
 \foreach \i/\n in {1/{$n_1$}, 2/{$n_2$}, 3/{$n_3$}} {
   \node[morsel] at ({3.8 + (\i-1)*0.6}, 1.5) {\n};
@@ -240,12 +240,12 @@ Another (v2) attempt using flat-buffer plus chunk-index (\texttt{Vec<u32>} plus 
 \node[endlbl] at (5.0, 0.95) {back};
 \draw[pop] (3.8, 1.85) to[out=90, in=-90] node[actlbl, left, pos=0.45] {pop} (4.65, 2.75);
 
-% ----- W3 (drained -> stealer) -----
+%  : -- W3 (drained -> stealer)  : --
 \node[workeridle] (w3) at (10, 3.2) {$W_3$};
 \draw[gray!50, thick, rounded corners=1pt] (9.4, 1.85) -- (9.4, 1.15) -- (10.6, 1.15) -- (10.6, 1.85);
 \node[endlbl] at (10, 1.5) {(drained)};
 
-% ----- Steal: W3 reaches over to W1's front -----
+%  : -- Steal: W3 reaches over to W1's front  : --
 \draw[steal] (-1.5, 1.4) -- (-1.5, 0.25) -- (10, 0.25) -- (w3.south);
 \node[actlbl, red!65!black, anchor=north] at (5, 0.2) {steal from front of $W_1$ via \texttt{Stealer::steal}};
 
@@ -320,7 +320,7 @@ This flat index is a collection of .npy files, one bin per cluster, two arrays p
 
 \begin{table}[H]
     \centering
-    \caption{Index loading on \texttt{c256\_30gb} ($5{,}000$ queries, $t{=}16$). Load time is the 3-run median; end-to-end includes query execution with \texttt{FAINDER\_SUPPRESS\_RESULTS=1}.}
+    \caption[Index-loading formats and load times.]{Index loading on \texttt{c256\_30gb} ($5{,}000$ queries, $t{=}16$). Load time is the 3-run median, end-to-end includes query execution with \texttt{FAINDER\_SUPPRESS\_RESULTS=1}.}
     \label{tab:method:serial}
     \begin{tabular}{llrrl}
         \toprule
@@ -349,7 +349,7 @@ The Rust kernel fuses both stages into a single function that accepts all histog
 
 \begin{enumerate}
     \item Parallel rebinning releases the GIL and uses Rayon to parallelise per-histogram rebinning across all available cores.
-    \item Cumulative sums are computed per-histogram into a flat buffer, then each column's \texttt{(value,\,id)} pairs are sorted with Rust's stable \texttt{slice::sort\_by} on a per-column \texttt{Vec<(f32,u32)>}. This avoids the large $N \times M$ temporary that NumPy's \texttt{argsort} requires; the per-column pair buffer is $O(n_\text{hists})$ and is reused across bin boundaries.
+    \item Cumulative sums are computed per-histogram into a flat buffer, then each column's \texttt{(value,\,id)} pairs are sorted with Rust's stable \texttt{slice::sort\_by} on a per-column \texttt{Vec<(f32,u32)>}. This avoids the large $N \times M$ temporary that NumPy's \texttt{argsort} requires, the per-column pair buffer is $O(n_\text{hists})$ and is reused across bin boundaries.
     \item Lastly, the sorted percentile and ID arrays are returned to Python as a tuple of \texttt{ndarray} objects, which PyO3 converts into NumPy arrays.
 \end{enumerate}
 
@@ -363,11 +363,11 @@ Every run of the benchmark harness is a single invocation of \texttt{run-queries
 
 \subsection{Correctness Validation\label{sec:correctness}}
 
-To consider any performance result valid, we must ensure that the Rust engine's result sets match the Python reference. The harness runs a correctness check at every configuration before timing; any failed correctness check fails the cell. No performance number in Chapter~\ref{cha:chapter4} is reported without a passing correctness check at the same configuration.
+To consider any performance result valid, we must ensure that the Rust engine's result sets match the Python reference. The harness runs a correctness check at every configuration before timing, any failed correctness check fails the cell. No performance number in Chapter~\ref{cha:chapter4} is reported without a passing correctness check at the same configuration.
 
 \subsection{Thread Sweep and Repetitions}
 
-We measure against the following thread counts $t \in \{1,\allowbreak 8,\allowbreak 12,\allowbreak 14,\allowbreak 16,\allowbreak 18,\allowbreak 20,\allowbreak 24,\allowbreak 28,\allowbreak 32,\allowbreak 48,\allowbreak 64,\allowbreak 96,\allowbreak 128,\allowbreak 192\}$. We do not populate every cell in the matrix with a $(t, \text{build}, \text{dataset})$ triple, since the coarse grid $\{1, 8, 16, 32, 64, 96\}$ covers all builds and datasets. We perform finer $t$ sweeps ($\{12, 14, 18, 20, 24, 28, 48\}$) for specific ceilings and instances of negative composability (notably ceiling~(ii) at $t \approx 16$; §\ref{sec:exp:c2}). Threads $t \in \{128, 192\}$ exercise Hyperthreading and appear only in the scaling experiment (§\ref{sec:exp:scaling}). 
+We measure against the following thread counts $t \in \{1,\allowbreak 8,\allowbreak 12,\allowbreak 14,\allowbreak 16,\allowbreak 18,\allowbreak 20,\allowbreak 24,\allowbreak 28,\allowbreak 32,\allowbreak 48,\allowbreak 64,\allowbreak 96,\allowbreak 128,\allowbreak 192\}$. We do not populate every cell in the matrix with a $(t, \text{build}, \text{dataset})$ triple, since the coarse grid $\{1, 8, 16, 32, 64, 96\}$ covers all builds and datasets. We perform finer $t$ sweeps ($\{12, 14, 18, 20, 24, 28, 48\}$) for specific ceilings and instances of negative composability (notably ceiling~(ii) at $t \approx 16$  §\ref{sec:exp:c2}). Threads $t \in \{128, 192\}$ exercise Hyperthreading and appear only in the scaling experiment (§\ref{sec:exp:scaling}). 
 
 We repeat each cell $(t, \text{build}, \text{dataset})$ five times and report the median. If the point estimate is smaller than the single-cell variance in the campaign, we repeat the fine-$t$ f16 experiment (§\ref{sec:exp:c2:f16}) ten times per cell to tighten the confidence interval.
 
@@ -385,7 +385,8 @@ There are two measurements used throughout our Experiments:
     \item \emph{With-results} (\texttt{FAINDER\_SUPPRESS\_RESULTS=0}) measures the end-to-end cost, including serialisation of results back to Python. Used in §\ref{sec:exp:python}, §\ref{sec:exp:e2e}, and §\ref{sec:exp:dispatch}. The claim of user-visible speedup is based on this measurement.
 \end{itemize}
 
-The two modes differ by orders of magnitude on the larger workloads. In with-results mode, the Python baseline constructs a per-\emph{(query, cluster)} result dictionary and boxes the matching IDs into NumPy arrays; on the primary workload this materialisation dominates the end-to-end wall. Running a large query batch in with-results mode is therefore materialisation-bound, not search-bound. The Rust engine does not construct this dictionary at all, instead it generates a compact NumPy array of matches and returns it to the caller. Suppress-results isolates the search phase, which is where the ceiling ablations operate; with-results is the user-visible cost, and the quantitative decomposition is reported in §\ref{sec:exp:e2e:mat}.
+The two modes differ by orders of magnitude on the larger workloads. In with-results mode, the Python baseline constructs a per-\emph{(query, cluster)} result dictionary and boxes the matching IDs into NumPy arrays, on the primary workload this materialisation dominates the end-to-end wall. Running a large query batch in with-results mode is therefore bound by materialisation instead of search. The Rust engine does not construct this dictionary at all, instead it generates a compact NumPy array of matches and returns it to the caller. Suppress-results isolates the search phase, which is where the ceiling ablations operate. With-results is the user-visible cost, and the quantitative decomposition is reported in §\ref{sec:exp:e2e:mat}.
+
 
 \subsection{Confidence Intervals\label{sec:method:ci}}
 
@@ -402,32 +403,30 @@ where $s_a$ and $s_b$ are the sample standard deviations of the two groups, $n_a
 
 For each ablation we formulate an \emph{a-priori} hypothesis about the expected wall response. The experiment either confirms or falsifies the hypothesis, and if falsified, we provide a performance mechanism explanation in (§\ref{sec:exp:negcomp:instances}). The hypotheses are as follows:
 
-\subsection{Ceiling (i) --- Compute / L1 Latency}
+\subsection{Ceiling (i)  :  Compute / L1 Latency}
 
 \textbf{Hypothesis (i).} Increasing per-comparison instruction throughput will reduce wall at every thread count. Techniques used to increase throughput include leaf-stage AVX-512, MSHR-pipelined batch search, horizontal-SIMD lockstep, and PGM learned index.
 
 \textbf{Falsification condition.} If wall stays within $\pm 10\%$ of default at every $(\text{dataset}, t)$ cell, we can conclude that the binding cost is the \emph{number} of per-cluster dependent-load chains, not the depth or throughput of any individual chain. In the case of falsification, the taxonomy of the four ceilings must separate compute throughput from load-latency, and every subsequent ablation must reason about the latter.
 
-\subsection{Ceiling (ii) --- Shared L3 Capacity}
+\subsection{Ceiling (ii)  :  Shared L3 Capacity}
 
 \textbf{Hypothesis (ii).} Footprint-reducing optimisations will reduce wall at intermediate thread count ($t \in [8, 32]$), and footprint-expanding optimisations will increase it. The shared L3 cache is $105$\,MiB per socket, and the working set of each thread is $\sim\!5$\,MiB.
 
 \textbf{Falsification condition.} If LLC-miss density does not track wall consistently across builds, a second ceiling has taken over. If we observe elevated LLC misses in a build but null or negative wall response at high $t$, the second ceiling is likely on-socket memory-traffic pressure.
 
-\subsection{Ceiling (iii) --- On-Socket Memory-Traffic Pressure}
+\subsection{Ceiling (iii)  :  On-Socket Memory-Traffic Pressure}
 
 \textbf{Hypothesis (iii).} At higher thread count ($t \in [32, 48]$), where the anti-scaling signature appears due to memory hierarchy pressure, bandwidth-reducing optimisations targeting the search phase (\texttt{f16}) and the emit phase (\texttt{packed-ids}) will each win at the bare default.
 
-\textbf{Falsification condition.} Layering packed-ids on top of \bcombo{} regresses instead of composing positively, the emit-bandwidth ceiling has already been collected by the coarser optimisation.
+\textbf{Falsification condition.} If layering \texttt{packed-ids} on top of \bcombo{} regresses instead of composing positively, then the emit-bandwidth headroom has already been absorbed by the coarser optimisation.
 
 
-\subsection{Ceiling (iv) --- Cross-Socket UPI}
+\subsection{Ceiling (iv)  :  Cross-Socket UPI}
 
-\textbf{Hypothesis (iv).} 
+\textbf{Hypothesis (iv).} Cross-socket UPI traffic is a binding constraint distinct from on-socket memory-traffic pressure. A four-configuration \texttt{numactl} probe (unpinned first-touch; single-socket; interleave; cross-socket forced) will separate the two.
 
-\texttt{numactl} with four configurations (unpinned first-touch; single-socket; interleave; cross-socket forced) will separate on-socket memory-traffic pressure from cross-socket UPI saturation.
-
-\textbf{Falsification condition.} If we do not observe a measurable difference between single-socket and unpinned first-touch at $t \leq 48$, the two ceilings are indistinguishable on this workload and the four-ceiling taxonomy reduces to three.
+\textbf{Falsification condition.} If we do not observe a measurable difference between single-socket and unpinned first-touch at $t \leq 48$, the two ceilings are indistinguishable on this workload and the four ceilings reduce to three.
 
 \subsection{Negative-Composability Instances}
 
@@ -441,7 +440,7 @@ Each of the five negative-composability instances (§\ref{sec:exp:negcomp:instan
     \item \textbf{§\ref{sec:exp:c4} (\texttt{first-touch $+$ interleave}).} Spreading page allocation across both NUMA nodes should reduce cross-socket UPI traffic when the workload spans both sockets.
 \end{itemize}
 
-Every hypothesis has a measurement associated with it, which either confirms or falsifies it; where falsification occurs, a perf-counter-grounded mechanism story accompanies it in §\ref{sec:exp:negcomp:instances}. The pattern of falsifications is what motivates the pre-flight methodology of §\ref{sec:exp:negcomp:preflight}.
+Every hypothesis has a measurement associated with it, which either confirms or falsifies it. Where falsification occurs, a perf-counter-grounded mechanism story accompanies it in §\ref{sec:exp:negcomp:instances}. The pattern of falsifications is what motivates the pre-flight methodology of §\ref{sec:exp:negcomp:preflight}.
 
 \subsection{Dispatcher and Out-of-Distribution Validation}
 

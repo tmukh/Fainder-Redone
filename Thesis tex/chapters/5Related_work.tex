@@ -11,9 +11,9 @@ In this chapter, we survey work related to the thesis's contributions in four di
 
 \section{Hardware-Optimised Index Structures}
 
-Work done by Manegold et al.~\cite{manegold_2000} illustrates that main-memory access is the dominant bottleneck for in-memory database operations, from that work cache-conscious design principles were establish, which subsequently influenced much of the work in database systems. Manegold et al.'s analysis showed that column-major (SoA) storage dramatically outperforms row-major (AoS) storage for projective (columnar) access patterns, which is the direct motivation for the memory layout designed in Chapter~\ref{cha:chapter3}.
+Work done by Manegold et al.~\cite{manegold_2000} illustrates that main-memory access is the dominant bottleneck for in-memory database operations, from that work cache-conscious design principles were established, which subsequently influenced much of the work in database systems. Manegold et al.'s analysis showed that column-major (SoA) storage dramatically outperforms row-major (AoS) storage for projective (columnar) access patterns, which is the direct motivation for the memory layout designed in Chapter~\ref{cha:chapter3}.
 
-Adaptive Radix Trees (ART)~\cite{leis_2013} adapt their node fanout to the key distribution, achieving cache efficiency for point and range queries. They avoid fixed-fanout waste of classical B-trees. ARTs target key-value loops rather than percentile predicate evaluations, nontheless their design philosophy of having a data structure based on cache line behaviour rather than asymptotic complexity informs the approach taken in this thesis.
+Adaptive Radix Trees (ART)~\cite{leis_2013} adapt their node fanout to the key distribution, achieving cache efficiency for point and range queries. They avoid fixed-fanout waste of classical B-trees. ARTs target key-value loops rather than percentile predicate evaluations, nonetheless their design philosophy of having a data structure based on cache line behaviour rather than asymptotic complexity informs the approach taken in this thesis.
 
 Khuong and Morin~\cite{khuong_morin_2017} established in a survey for comparison-based searching on modern CPUs that the Eytzinger layout (which is breadth-first) outperforms classical sorted arrays when workloads are cache-cold and of moderate size, due to its cache-line-aligned root of the search tree. This analysis was extended by Schlegel et al.~\cite{schlegel_2009} with SIMD-accelerated k-ary search. Neither of these constructions survived into the final integrated Fainder build, due to Fainder's elimination of cache-coldness on L1-resident columns and the k-ary chain shortening landing on the slack outside of $t=1$. The foundational analysis behind these designs traces back to Brodal and Fagerberg~\cite{brodal_fagerberg_2006}.
 
@@ -24,14 +24,14 @@ A learned index structure~\cite{kraska_2018} replaces B-tree index nodes with le
 
 For analytical queries, Neumann~\cite{neumann_2011} demonstrated that compiling query plans to native machine code rather than interpreting them through a tuple-at-a-time Volcano model yields order-of-magnitude performance improvements. Key insight here is that inner loops that are tight and specialised by type can be optimised by LLVM better than interpreted bytecode. The entire idea of Fainder's Rust implementation is motivated by this insight.
 
-A comprehensive analysis by Kersten et al.~\cite{kersten_2018} of vectorised group-by aggregation showed that SIMD instructions provide 4--8$\times$ speedup for fixed-width arithmetic operations on sorted arrays. We implement explicit AVX-512 SIMD intrinsics for the final stage of Fainder's binary search (Section~\ref{sec:exp:c1:simd}), replacing the last ${\sim}16$ scalar iterations with a single vector comparison.
+Kersten et al.~\cite{kersten_2018} compared compiled and vectorised query-execution models and found that neither dominates: vectorised execution wins where cache-resident batch processing and parallel data access matter, compilation where per-tuple work is tight. We implement explicit AVX-512 SIMD intrinsics for the final stage of Fainder's binary search (Section~\ref{sec:exp:c1:simd}), replacing the last ${\sim}16$ scalar iterations with a single vector comparison.
 
-Polychroniou and Ross~\cite{polychroniou_2014} performed a comprehensive study of hash join algorithms in main-memory databases on multicore CPUs, in which work-stealing schedulers significantly outperform static task partitioning in the case of sub-tasks with unequal cost. Fainder's cluster queries have costs that are heterogeneous (large cluster $\to$ more histograms $\to$ more binary search steps). This leads us to choose Rayon's work stealing scheduler (an implementation of the scheduler of Blumofe and Leiserson~\cite{blumofe_leiserson_1999}) over round-robin thread assignment. Our reports in Chapter~\ref{cha:chapter4} are consistent with Polychroniou and Ross's findings: speedup grows with thread count until the memory-traffic and interconnect ceilings bind (§\ref{sec:exp:scaling}).
+Leis et al.~\cite{leis_2014} showed with morsel-driven parallelism that dynamic work distribution outperforms static task partitioning when sub-tasks have unequal cost. Fainder's cluster queries have costs that are heterogeneous in exactly this way (large cluster $\to$ more histograms $\to$ more binary search steps). This leads us to choose Rayon's work stealing scheduler (an implementation of the scheduler of Blumofe and Leiserson~\cite{blumofe_leiserson_1999}) over round-robin thread assignment. Our reports in Chapter~\ref{cha:chapter4} are consistent with this: speedup grows with thread count until the memory-traffic and interconnect ceilings bind (§\ref{sec:exp:scaling}).
 
 Kocberber et al.~\cite{kocberber_2013} propose a way to hide memory latency in in-memory hash-join traversal. This is possible by interleaving many independent lookups per core, saturating the MSHR budget. Fainder's 8-way batch binary search ablation (Section~\ref{sec:exp:c1:batch}) is a direct application of this idea. 
 
 
-The MonetDB/X100 project~\cite{boncz_2005} establishes column-at-a-time execution for tight SIMD-friendly inner loops.  Section~\ref{sec:exp:wf:columnar} is inspired by this, and the  design is surveyed in a broader sense by Abadi et al.~\cite{abadi_2008,abadi_2013}. Vectorised database operators studied by Willhalm et al.~\cite{willhalm_2009} and Zhou and Ross~\cite{zhou_ross_2002} were also influential in Fainder's new SIMD design.
+The MonetDB/X100 project~\cite{boncz_2005} introduced vector-at-a-time execution, processing cache-resident batches to combine columnar layouts with tight SIMD-friendly inner loops.  Section~\ref{sec:exp:wf:columnar} is inspired by this, and the  design is surveyed in a broader sense by Abadi et al.~\cite{abadi_2008,abadi_2013}. Vectorised database operators studied by Willhalm et al.~\cite{willhalm_2009} and Zhou and Ross~\cite{zhou_ross_2002} were also influential in Fainder's new SIMD design.
 
 \section{Approximate Histogram-Based Systems}
 
@@ -43,12 +43,12 @@ We do not consider these systems as competitors to Fainder, since Fainder uses p
 
 Percentile-predicate evaluation is a finer grained primitive than the hardware-conscious systems surveyed above, and it has not received the same level of attention. Below are several closely related primitives, that help us position Fainder's percentile-predicate evaluation in the landscape of hardware-conscious systems.
 
-\textbf{L1-resident sorted-array search.} Fainder's binary search runs entirely against L1-resident data, since the bin-edge array (~142 floats per cluster) and the per-bin cumulative-density column (~1{,}400 floats per query) are both small enough. The literature on cache-conscious sorted-array search is as follow:
+\textbf{Cache-resident sorted-array search.} Fainder's binary search runs against cache-resident data after warm-up: the bin-edge array (${\sim}142$ floats per cluster) is L1-resident, and the per-cluster cumulative-density slices range from L1- to L2-resident depending on cluster density (§\ref{sec:method:data}). The literature on cache-conscious sorted-array search is as follows:
 
 \begin{itemize}
-    \item Kim et al.'s FAST index~\cite{kim_2010} reports speedups of multiple magnitudes by re-organising search trees to exploit page spize, cache-line size, and SIMD width.
+    \item Kim et al.'s FAST index~\cite{kim_2010} reports large speedups by re-organising search trees to exploit page size, cache-line size, and SIMD width simultaneously.
     \item Khuong and Morin~\cite{khuong_morin_2017}'s work shows small $n$ branchless binary search wins, while Eytzinger BFS layout wins for large $n$.
-    \item Schlegel et al.'s k-ary search on modern processors~\cite{schlegel_2009} is the underlying foundation for Eytzinger and k-ary search explored in earlier ablation campaigns of this thesis. It is also the foundation for SIMD k-ary search, which is the final stage of Fainder's binary search (Section~\ref{sec:exp:c1:simd}).
+    \item Schlegel et al.'s k-ary search on modern processors~\cite{schlegel_2009} is the foundation for the SIMD k-ary variants explored in earlier ablation campaigns of this thesis, and for the SIMD leaf stage of Fainder's binary search (Section~\ref{sec:exp:c1:simd}).
 \end{itemize}
 
 \textbf{Vectorised column scan.} Fainder's f16 ablation (Section~\ref{sec:exp:c2:f16}) is a vectorised scan of a column of 16-bit floats, which is the same access pattern as the following systems:
@@ -84,7 +84,7 @@ The contribution of this thesis addresses two gaps of this literature:
 
 \begin{itemize}
     \item No studies, to our knowledge, have been conducted that characterise hardware bottlenecks of histogram-based percentile search or hardware-conscious engineering of such systems.
-    \item No evaluation, to our knowledge, exists of inter-query SIMD for binary-search-shaped workloads at Fainder's cluster-loop scale on Sapphire Rapids; existing evaluations such as Polychroniou et al.\ and Lang et al.~\cite{polychroniou_2014,lang_2020} predate the microarchitecture.
+    \item Before this work, no evaluation existed, to our knowledge, of inter-query SIMD for binary-search-shaped workloads at Fainder's cluster-loop scale on Sapphire Rapids. Existing evaluations such as Polychroniou et al.\ and Lang et al.~\cite{polychroniou_2014,lang_2020} predate the microarchitecture.
 \end{itemize}
 
-This thesis addresses the first gap with Fainder's query pipeline, due to its embarrassingly parallel structure, its access pattern being binary search, and its read-only index. It characterises the workload so that subsequent work can address the second.
+This thesis addresses the first gap with Fainder's query pipeline, due to its embarrassingly parallel structure, its access pattern being binary search, and its read-only index. It closes the second directly: the horizontal-SIMD evaluation of §\ref{sec:exp:c1:horizontal} is, to our knowledge, the first such measurement on Sapphire Rapids, with a null result at cache-resident scale.

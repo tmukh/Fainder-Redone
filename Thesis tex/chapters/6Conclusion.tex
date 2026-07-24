@@ -2,24 +2,24 @@
 
 \section{Summary}
 
-This thesis overhauled Fainder's query execution pipeline into a compiled Rust extension module. The new engine was used for an ablation study across more than twenty hardware-conscious optimisation axes. The dominant outcome of this study is structural, alongside a small engineering speedup.
+This thesis overhauled Fainder's query execution pipeline into a compiled Rust extension module. The new engine was used for an ablation study across more than twenty hardware-conscious optimisation axes. The dominant outcome of this study is structural. The engineering speedup, while large, is mechanistically secondary to it.
 
 On the Sapphire Rapids 8468H micro-architecture, Fainder's search phase is bound by four distinct performance ceilings: 
 
 \begin{enumerate}
-    \item Single-thread compute / L1 latency (\(t\leq 8\))
+    \item Single-thread compute / L1 latency (\(t\leq 8\); candidate, refuted)
     \item Shared L3 capacity (\(t\approx 16\))
     \item On-socket memory-traffic pressure (\(t\in[32, 48]\) on one socket)
-    \item Cross-socket UPI interconnect (\(t > 48\)
+    \item Cross-socket UPI interconnect (\(t > 48\))
 \end{enumerate}
 
-These ceilings were established through Chatper~\ref{cha:chapter4}'s perf counters. Ceiling (iii) and (iv) were separated by a four-configuration \texttt{numactl} probe.
+Ceiling (i) is the literature's default assumption for binary-search workloads, its refutation on this workload is itself a finding. The ceilings were established through Chapter~\ref{cha:chapter4}'s perf counters. Ceiling (iii) and (iv) were separated by a four-configuration \texttt{numactl} probe.
 
-Across five independent ablations on five different axes, a pattern emerged: a less fine-grained optimisation had already addressed the binding ceiling, and the finer-grained optimisation's overhead was a net regression rather than diminishing return. Although each instance had an argument to compose positiveily, each was falsified at scale by hardware counter evidence. The cross-axis breadth of the five instances rules out a per-axis coincidence and establishes the pattern as structural. The five ablations were: emit-phase ID packing over \bcombo{} (§\ref{sec:exp:c3:packed}), K-batch cluster amortisation over \texttt{f16} (§\ref{sec:exp:wf:qb}), morsel-driven phase coordination over query-batch (§\ref{sec:exp:wf:morsel}), per-cluster reindexing over packed-ids (§\ref{sec:exp:reindex}), and page-granular NUMA interleave over first-touch placement (§\ref{sec:exp:c4}). 
+Across five independent ablations on five different axes, a pattern emerged: a less fine-grained optimisation had already addressed the binding ceiling, and the finer-grained optimisation's overhead was a net regression rather than diminishing return. Although each instance had an argument to compose positively, each was falsified at scale by hardware counter evidence. The cross-axis breadth of the five instances rules out a per-axis coincidence and establishes the pattern as structural. The five ablations were: emit-phase ID packing over \bcombo{} (§\ref{sec:exp:c3:packed}), K-batch cluster amortisation over \texttt{f16} (§\ref{sec:exp:wf:qb}), morsel-driven phase coordination over query-batch (§\ref{sec:exp:wf:morsel}), per-cluster reindexing over packed-ids (§\ref{sec:exp:reindex}), and page-granular NUMA interleave over first-touch placement (§\ref{sec:exp:c4}). 
 
 This pattern makes \textbf{dispatch-on-regime} the only near-optimal deployment strategy, which selects build features and deployment flags per workload regime. This dispatch policy was validated 17/18 exactly and 18/18 within 5\% in-distribution, and 6/6 within 5\% out-of-distribution, all six within 1\%, for a combined 23/24.
 
-The engineering results are secondary to the structural finding: Rust achieves a $530$--$598\times$ end-to-end speedup over the Python baseline at the peak-scaling cell ($t=16$) across three independent dataset scales. This end-toend ratio is dominated by Rust avoiding Python's result-dict construction (§\ref{sec:exp:e2e:mat}). The search phase itself scales from $22.7\times$ on the smallest calibration dataset to $1.34\times$ on the largest, bending the curve toward the shared hardware ceilings. All these speedups preserve precision $=$ recall $= 1.000$. The speedup depends on the regime, since negative composability makes the best composition for one regime, regress at another.
+The engineering results are secondary to the structural finding: Rust achieves a $530$--$598\times$ end-to-end speedup over the Python baseline at the peak-scaling cell ($t=16$) across three independent dataset scales. This end-to-end ratio is dominated by Rust avoiding Python's result-dict construction (§\ref{sec:exp:e2e:mat}). The search phase itself scales from $22.7\times$ on the smallest calibration dataset to $1.34\times$ on the largest, bending the curve toward the shared hardware ceilings. All these speedups preserve precision $=$ recall $= 1.000$. The speedup depends on the regime, since negative composability makes the best composition for one regime, regress at another.
 
 \section{Contributions}
 
@@ -30,9 +30,9 @@ The thesis makes five primary contributions.
     
     \item \textbf{Four-ceiling characterisation.} Identification of four performance ceilings mentioned above, on the Sapphire Rapids 8468H micro-architecture, and the regimes under which each ceiling binds. 
 
-    \item \textbf{Negative-composability pattern.} Five independent instances of composability where a second optimisation regress at scale. An ablation that would compose positively would falsify this pattern.
+    \item \textbf{Negative-composability pattern.} Five independent instances of composability where a second optimisation regresses at scale. An ablation that would compose positively would falsify this pattern.
 
-    \item \textbf{Pre-flight ceiling-identification.} A probe template diagnoses the binding ceiling at the \emph{target composition} before commiting to implementation. When multiple stacked ceilings exist, the ablation methodology (implement, measure, accept) is methodologically insufficient.
+    \item \textbf{Pre-flight ceiling-identification.} A probe template diagnoses the binding ceiling at the \emph{target composition} before committing to implementation. When multiple stacked ceilings exist, the ablation methodology (implement, measure, accept) is methodologically insufficient.
     
     \item \textbf{Dispatch-on-regime.} Automatic policy that selects build features and deployment flags per workload regime. Valid even across out-of-distribution scenarios.
 \end{enumerate}
@@ -42,13 +42,13 @@ Contributions (1) and (5) are engineering artefacts, while (2), (3), and (4) are
 \section{Limitations}
 
 \paragraph{Single micro-architecture.}
-All experiments run on a single Sapphire Rapids 8468H configuration. The ceilings introduced in this thesis are based on this micro-architecture.A different micro-architecture (Genoa, Granite Rapids, Grace) would most likely have different per-ceiling thresholds. The methodological contribution (pre-flight ceiling-identification) generalises across micro-architectures, the specific ceiling thresholds and dispatch policy entries do not.
+All experiments run on a single Sapphire Rapids 8468H configuration. The ceilings introduced in this thesis are based on this micro-architecture. A different micro-architecture (Genoa, Granite Rapids, Grace) would most likely have different per-ceiling thresholds. The methodological contribution (pre-flight ceiling-identification) generalises across micro-architectures, the specific ceiling thresholds and dispatch policy entries do not.
 
 \paragraph{Single-machine evaluation.}
 All experiments run on shared memory. This might introduce a fifth ceiling of Network latency, in case of sharing the index across multiple machines. Asynchronous I/O and work offloading become candidate optimisations in that case.
 
 \paragraph{Density-range scope.}
-The dispatch-on-regime policy is validated at \(n_\text{hists}/n_\text{clusters}\) densities of $\sim$8,200 (c1024\_56gb) and $\sim$26,300 (c256\_56gb). The policy is not validated at densities below $\sim$8,200 (c4096\_56gb) or above $\sim$26,300 (c128\_56gb). The policy's density axis is therefore a prediction rather than a validated entry..
+The dispatch-on-regime policy is validated at \(n_\text{hists}/n_\text{clusters}\) densities of $\sim$8,200 (c1024\_56gb) and $\sim$26,300 (c256\_56gb). The policy is not validated at densities below $\sim$8,200 (c4096\_56gb) or above $\sim$26,300 (c128\_56gb), both outside the validated range. The policy's density axis is therefore a prediction rather than a validated entry.
 
 \section{Future Work}
 
