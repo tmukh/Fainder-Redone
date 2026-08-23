@@ -219,11 +219,11 @@ Reviewers: Prof.\ Dr.\ Volker Markl, Prof.\ Dr.\ Matthias B\"ohm \quad Advisor: 
     \item \texttt{f16} (halves bytes/value): null on the dense primary, pays $\sim$20\% at the sparse OOD density --- footprint only matters where it actually binds
   \end{itemize}
   \smallskip
-  Verdict: one regime, two mechanisms --- allocator queueing on dense clusters, L3 footprint on sparse.
+  Verdict: one regime, two mechanisms --- allocator queueing on dense data (few huge clusters), L3 footprint on sparse data (many small clusters).
 \end{frame}
 
 \begin{frame}{Ceiling (iii): On-Socket Memory-Traffic Pressure}
-  What it is: all cores share the queues on the path to memory (L3 $\to$ mesh $\to$ memory controller). Each added core lengthens every queue, so \emph{every} access waits longer --- while total traffic sits at $\sim$0.5\% of STREAM peak. \textbf{Congestion, not saturation.}
+  What it is: all cores share the queues on the path to memory (L3 $\to$ mesh $\to$ memory controller). Each added core lengthens every queue, so \emph{every} access waits longer --- while total traffic sits at $\sim$0.5\% of STREAM peak (the machine's measured maximum memory throughput). \textbf{Congestion, not saturation.}
   \vfill
   The signature, \texttt{c256\_30gb}, wall in seconds:
   \begin{center}
@@ -254,7 +254,7 @@ Reviewers: Prof.\ Dr.\ Volker Markl, Prof.\ Dr.\ Matthias B\"ohm \quad Advisor: 
       A: unpinned & OS default, first-touch & $19.28$ & $16.97$ & $18.19$ & $17.58$ \\
       B: single socket & cores $+$ memory on socket 0 & \good{$\mathbf{16.77}$} & \good{$\mathbf{15.04}$} & -- & -- \\
       C: interleave & pages alternate sockets per 4\,KB & \bad{$25.87$} & \bad{$23.73$} & \bad{$22.91$} & \bad{$24.83$} \\
-      D: cross-socket & memory socket 0, cores socket 1 & $19.08$ & $16.86$ & -- & -- \\
+      D: cross-socket & data socket 0, threads socket 1 (all remote) & $19.08$ & $16.86$ & -- & -- \\
       \bottomrule
     \end{tabular}
   \end{center}
