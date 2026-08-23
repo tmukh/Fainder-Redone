@@ -196,7 +196,7 @@ Reviewers: Prof.\ Dr.\ Volker Markl, Prof.\ Dr.\ Matthias B\"ohm \quad Advisor: 
   \begin{itemize}
     \item Counters at $t{=}1$: IPC $\approx 1.9$, L1d miss/load $0.5$--$0.7\%$ --- the chains are cache-resident
     \item PGM verifiably cuts chain depth to $O(\log\log n)$; the wall does not move
-    \item The wall is the \emph{number} of chains (one per cluster), not the depth of any single chain
+    \item The wall is the \emph{number} of chains, not their depth: 10\,K queries $\times$ 191 clusters $\times$ 2 searches $\approx$ 3.8\,M chains of $\sim$22 cheap probes each
   \end{itemize}
 \end{frame}
 
