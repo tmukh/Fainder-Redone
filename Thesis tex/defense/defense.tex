@@ -77,39 +77,9 @@ Reviewers: Prof.\ Dr.\ Volker Markl, Prof.\ Dr.\ Matthias B\"ohm \quad Advisor: 
     \item One family, one x-axis: the same question lands at the same position everywhere
     \item Stored per x-axis point: the fraction of each column's values below it --- \textbf{sorted}, with IDs
     \item Sorted $=$ binary-searchable: $\sim$191 short lists, never 5M summaries
+    \item \alert{``median $> 20$'' $\iff$ ``fraction of values $\leq 20$ is $< 0.5$''}: $\tau$ picks the list, $p$ picks the cut
+    \item Clusters are independent $\to$ parallel. Search $=$ few dependent reads; emit $=$ many writes
   \end{itemize}
-\end{frame}
-
-\begin{frame}{One Query, End to End}
-  Query: \emph{``median $>$ 20''} $=$ $(p{=}0.5,\; >,\; \tau{=}20)$
-  \hfill \alert{median $> 20 \iff$ CDF$(20) < 0.5$}
-  \vspace{1ex}
-  \begin{columns}[T]
-    \column{0.46\textwidth}
-    \centering
-    Cluster A index (toy: 3 histograms)\\[0.5ex]
-    \footnotesize
-    bin edges: $[0, 10, \mathbf{20}, 30, 50]$\\[1ex]
-    \begin{tabular}{lll}
-      \toprule
-      edge & sorted CDFs & IDs \\
-      \midrule
-      $\leq$10 & $[0.00, 0.10, 0.20]$ & H2 H1 H5 \\
-      $\boldsymbol{\leq}$\textbf{20} & $[\mathbf{0.25}, \mathbf{0.45}, 0.50]$ & \textbf{H2 H5} H1 \\
-      $\leq$30 & $[0.75, 0.75, 0.80]$ & H2 H5 H1 \\
-      \bottomrule
-    \end{tabular}
-    \column{0.50\textwidth}
-    \begin{enumerate}
-      \item Binary search $\tau{=}20$ in the bin edges $\to$ column ``$\leq$20''
-      \item Binary search $0.5$ in that sorted column $\to$ cut after 2 entries
-      \item Emit the IDs before the cut: \good{H2, H5} \\ {\footnotesize(H1 sits exactly at $0.50$: median $= 20$, not $> 20$)}
-      \item Cluster B (salaries, range $\geq$ 10\,000): $\tau$ below range $\to$ \textbf{all match, no search}
-      \item Union across clusters $=$ the answer
-    \end{enumerate}
-  \end{columns}
-  \vfill
-  Clusters are independent $\to$ the cluster loop parallelises. Search $=$ few dependent reads; emit $=$ many writes.
 \end{frame}
 
 \begin{frame}{The Python Baseline}
@@ -415,6 +385,38 @@ Reviewers: Prof.\ Dr.\ Volker Markl, Prof.\ Dr.\ Matthias B\"ohm \quad Advisor: 
 % ================================================================ BACKUP
 \appendix
 \section{Backup}
+
+\begin{frame}{Backup: One Query, End to End}
+  Query: \emph{``median $>$ 20''} $=$ $(p{=}0.5,\; >,\; \tau{=}20)$
+  \hfill \alert{median $> 20 \iff$ CDF$(20) < 0.5$}
+  \vspace{1ex}
+  \begin{columns}[T]
+    \column{0.46\textwidth}
+    \centering
+    Cluster A index (toy: 3 histograms)\\[0.5ex]
+    \footnotesize
+    bin edges: $[0, 10, \mathbf{20}, 30, 50]$\\[1ex]
+    \begin{tabular}{lll}
+      \toprule
+      edge & sorted CDFs & IDs \\
+      \midrule
+      $\leq$10 & $[0.00, 0.10, 0.20]$ & H2 H1 H5 \\
+      $\boldsymbol{\leq}$\textbf{20} & $[\mathbf{0.25}, \mathbf{0.45}, 0.50]$ & \textbf{H2 H5} H1 \\
+      $\leq$30 & $[0.75, 0.75, 0.80]$ & H2 H5 H1 \\
+      \bottomrule
+    \end{tabular}
+    \column{0.50\textwidth}
+    \begin{enumerate}
+      \item Binary search $\tau{=}20$ in the bin edges $\to$ column ``$\leq$20''
+      \item Binary search $0.5$ in that sorted column $\to$ cut after 2 entries
+      \item Emit the IDs before the cut: \good{H2, H5} \\ {\footnotesize(H1 sits exactly at $0.50$: median $= 20$, not $> 20$)}
+      \item Cluster B (salaries, range $\geq$ 10\,000): $\tau$ below range $\to$ \textbf{all match, no search}
+      \item Union across clusters $=$ the answer
+    \end{enumerate}
+  \end{columns}
+  \vfill
+  Clusters are independent $\to$ the cluster loop parallelises. Search $=$ few dependent reads; emit $=$ many writes.
+\end{frame}
 
 \begin{frame}{Backup: Why is end-to-end $530\times$ if search is only $1.34\times$?}
   \begin{itemize}

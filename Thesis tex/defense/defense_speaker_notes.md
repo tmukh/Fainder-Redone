@@ -2,9 +2,9 @@
 
 These notes assume you remember nothing. Part 1 is the story in one page. Part 2 explains every concept that appears on a slide. Part 3 is the slide-by-slide script with timings. Part 4 covers the backup slides. Part 5 collects likely questions that have no backup slide.
 
-Total budget: 20 minutes, 21 slides after the title. The script targets sum to about 20:35 (see the cheat sheet); if you are running long live, compress slides 11 (Ceiling i) and 19 (Contributions), which repeat material the committee has already heard.
+Total budget: 20 minutes, 21 slides after the title. The script targets sum to about 20:35 (see the cheat sheet); if you are running long live, compress slides 10 (Ceiling i) and 19 (Contributions), which repeat material the committee has already heard.
 
-**DIMA checklist mapping** (from the course FAQ): comparison against the state of the art → slide 18; individual contributions → slide 19; unanticipated findings → slides 11 (ceiling (i) refuted), 12 (the f16 and pooled sign flips), and 14 (five falsified composition predictions, including the pre-registered local-ids one); future work → slide 20. Remaining items on you: the official Thesis Defense Template is on the course Moodle page — check whether the chair requires it before presenting from this deck — and schedule the 20-minute dry run with Lennart (he is unavailable after ~Sept 23).
+**DIMA checklist mapping** (from the course FAQ): comparison against the state of the art → slide 17; individual contributions → slide 18; unanticipated findings → slides 10 (ceiling (i) refuted), 12 (the f16 and pooled sign flips), and 14 (five falsified composition predictions, including the pre-registered local-ids one); future work → slide 19. Remaining items on you: the official Thesis Defense Template is on the course Moodle page — check whether the chair requires it before presenting from this deck — and schedule the 20-minute dry run with Lennart (he is unavailable after ~Sept 23).
 
 ---
 
@@ -160,97 +160,93 @@ Say: "Imagine millions of datasets where you cannot open the raw data — privac
 
 Have ready: Fainder is your advisor's paper (Behme et al.). Anything about clustering quality or index construction internals is the original paper's territory; you inherit the index as given.
 
-### Slide 4 — Fainder in Plain Words (1:15)
+### Slide 4 — Fainder in Plain Words (1:30)
 
 Walk the diagram left to right. Say: "Before any hardware talk, the whole system in one picture. Five million column summaries. K-means — a standard grouping algorithm — sorts them into about two hundred families of similar shape. Why families? Because histograms in a family can share one x-axis, and once they share an x-axis, the same question lands at the same position in every one of them. At every point on that shared x-axis, the index stores one number per column — the fraction of that column's values below that point — and it stores those numbers sorted, together with the column IDs. Sorted is the whole trick. A sorted list can be binary-searched: cut it in half, again and again, instead of reading it end to end. So a query never looks at five million summaries. It jumps within about two hundred short sorted lists."
 
-This slide is your insurance: every later term (bin boundaries, cumulative densities, cluster loop) maps back to this picture. If a question later confuses you, come back to this picture and answer from it.
+Then the two beats that used to be their own slide — do not skip them: "One equivalence makes this concrete: asking whether a column's median is above 20 is the same as asking whether the fraction of its values at or below 20 is under one half. So the threshold picks which sorted list to open, and the percentile picks where to cut it. And two properties to carry through the talk: clusters are independent, so this parallelises; and searching is a few dependent reads while emitting — writing out the matching IDs — is many writes. They stress different hardware, and we measure them separately."
 
-### Slide 5 — One Query, End to End (1:00)
+This slide is your insurance: every later term (bin boundaries, cumulative densities, cluster loop) maps back to this picture. If a question later confuses you, come back to this picture and answer from it. The full worked example (toy tables, median > 20 traced step by step) is now the FIRST backup slide — jump to it for any "how does a query actually execute" question and walk it exactly as in Part 9.
 
-Say: "Let me trace one query through a toy index — three histograms, real mechanics. The query: find columns whose median is above 20. The one equivalence that drives everything is at the top right: the median is above 20 exactly when fewer than half the values are at or below 20 — when the cumulative fraction at 20 is under 0.5. Now the trace. Step one: binary search for 20 in the bin edges — that picks the 'up to 20' column. Step two: binary search for 0.5 inside that sorted column — the cut lands after two entries. Step three: emit — write out — the IDs before the cut: H2 and H5. Notice H1 sits exactly at 0.50: its median is exactly 20, not above, and the cut excludes it — boundary cases like this are why every build is validated bit-for-bit. Meanwhile cluster B holds salaries: 20 is below its whole range, so all of it matches without any search — a fast path. Union the clusters, done. Two things to carry forward: clusters are independent, so this loop parallelises; and searching is a few dependent reads while emitting is many writes — they stress different hardware, so we measure them separately."
-
-The percentile↔CDF equivalence is the one conceptual jump your audience must make; say it slowly and point at it.
-
-### Slide 6 — The Python Baseline (1:15)
+### Slide 5 — The Python Baseline (1:15)
 
 Say: "The reference implementation is Python with NumPy, and it has a structural problem: the Global Interpreter Lock. Python only ever executes one thread at a time — that is what the lock enforces — and the specific NumPy search routine in the hot loop never releases it. So the loop over clusters, which should parallelise perfectly, runs strictly one cluster after the other, no matter how many threads you configure. We measured it: wall time is flat across every thread count, a two percent spread. Ten thousand queries take about two and a half hours. One number worth pausing on: Python's IPC — instructions completed per clock cycle, a measure of how smoothly the processor pipeline flows — is actually *higher* than Rust's. NumPy's bulk operations pipeline beautifully. It is still 378 times slower on the same cell, because it executes six times the instructions, almost all bookkeeping, funnelled through one effective core. Rust wins by doing less work on more cores, not by using the processor more elegantly."
 
 The IPC point routinely surprises committees; deliver it slowly.
 
-### Slide 7 — Goal and Scope (0:30)
+### Slide 6 — Goal and Scope (0:30)
 
 Say: "The goal: close the gap between what the algorithm can do and what the implementation delivers, without changing a single result. I re-implemented the query phase in Rust — a compiled language with real threads — behind the existing Python interface, and used it to test more than twenty optimisation ideas. One hard rule throughout: every build must return bit-for-bit identical results to the original. Out of scope: algorithm changes, GPUs, distribution. And the framing that matters: the port is the instrument. The findings are the thesis."
 
-### Slide 8 — Experimental Setup (1:00)
+### Slide 7 — Experimental Setup (1:00)
 
 Say: "The machine is what a search service would actually deploy on: two processor sockets, 96 physical cores, a terabyte of RAM. Two numbers to keep: each socket has 105 megabytes of L3 — the last cache before main memory, shared by all cores on the socket — and 48 cores, so up to 48 threads we live on one socket, and beyond that we span two. Four workloads, all sharing the same ten thousand queries: three sizes of the same corpus — 324 thousand, a million, and five million histograms — plus a fourth that keeps the five million but re-clusters them into families three times sparser. That fourth one is held out to test whether the findings generalise. Protocol: every configuration measured five times, medians reported, and the processor's own event counters — hardware that counts cache misses, stalls, instructions — recorded on every cell. 2,658 runs, every number traceable to a database row."
 
-### Slide 9 — The Rust Engine (1:00)
+### Slide 8 — The Rust Engine (1:00)
 
 Say: "The engine is a compiled module that Python calls like any other library — clustering and data loading stay in Python, nothing else changes for the user. Parallelism comes from Rayon, a Rust library where idle threads steal work from busy ones, so no core sits idle while another has a queue. The design decision that made the whole study possible: every optimisation is a compile-time switch, so every variant is its own reproducible binary — different memory layouts, half-precision values, vector instructions, different schedulers, different allocation strategies. And every build validates bit-identical against the Python reference before its numbers count for anything."
 
 (Rebinning is deliberately not on this slide — its one appearance in the talk is the result line on the speedup slide, with backup B8 behind it.)
 
-### Slide 10 — Finding 1: Four Performance Ceilings (1:30)
+### Slide 9 — Finding 1: Four Performance Ceilings (1:30)
 
 Say: "First finding. This is search wall time as threads increase, and the shaded regions mark where four different limits — I call them ceilings — take over. Up to eight threads, the candidate is the classic one for binary search: each read has to wait for the previous read. We refuted it here — more on that in a moment. Around sixteen threads, the shared cache: all cores on a socket compete for the same 105 megabytes. Between 32 and 48 threads, something uglier appears: adding cores makes the run *slower* — congestion on the path to memory. And past 48 threads we spill onto the second socket, and the link between the sockets becomes the fourth ceiling. The point of the slide: each ceiling binds in its own regime — its own region of thread counts and data sizes — and each responds to a different class of fixes."
 
 Point at the figure regions as you name them.
 
-### Slide 11 — Ceiling (i): Refuted (0:45)
+### Slide 10 — Ceiling (i): Refuted (0:45)
 
 Say: "First, what this ceiling is: binary search is a chain of reads where each read depends on the previous comparison — the processor cannot start read five before read four returns. 'Reads waiting on reads' is the textbook diagnosis for in-memory search, so it had to be candidate number one. The table is the refutation: four independent attacks on latency — vectorising the last steps, overlapping eight searches' reads, running sixteen queries in lockstep, and a learned index that predicts the position instead of searching. Every cell of every one lands between 0.90 and 1.13 — indistinguishable from noise. The counters say why: at one thread the loop misses the fastest cache on half a percent of loads — the arrays simply live there. The sharpest evidence is the learned index: the counters confirm it really does collapse the chain depth, and the wall still does not move. Conclusion: the wall is the *number* of chains — one per cluster per query — not the depth of any single one. No latency-side trick changes the count."
 
-### Slide 12 — Ceiling (ii): Shared L3 Capacity (1:30)
+### Slide 11 — Ceiling (ii): Shared L3 Capacity (1:30)
 
 Say: "The second ceiling looked like a cache-size story and turned out to be two stories. Look at the pooled row: 0.53 at one thread — nearly half the runtime gone — 0.66 at eight, 0.80 at sixteen, fading to nothing at high thread counts. What is it? Pre-allocated output buffers. Why does that help? At one thread it removes millions of little memory allocations; at eight and sixteen it also removes the queue — threads waiting in line on the memory allocator's internal lock instead of computing. Notice where it wins: exactly where the lock binds, not where cache capacity would. Second row, the AoS layout — our deliberate negative control, built to waste half of every cache line: it costs 17 percent at eight threads, then flips to a small *win* at 64 — the binding constraint itself moved. And the third piece, half-precision storage, the textbook cache fix: wins nothing standalone on the dense workload, drags the bundle down 15 percent at sixteen threads — yet the same feature saves 20 percent on the sparse held-out workload. Halving your data only helps if it moves you into a cache level you were missing before. So: one ceiling in name, two mechanisms in fact — allocator queueing on dense data, genuine cache pressure on sparse data."
 
 This is the densest slide. The three bullets are three separate pieces of evidence; keep them in order.
 
-### Slide 13 — Ceilings (iii) and (iv) (1:00)
+### Slide 12 — Ceilings (iii) and (iv) (1:00)
 
 Say: "Ceiling three: between 32 and 48 threads, wall time rises as cores are added. I deliberately do not call this a bandwidth limit — the measured traffic is about half a percent of what this machine's memory can actually stream. It is congestion, not saturation: too many cores queueing on the same path to memory. What helps is moving fewer bytes per operation. Ceiling four is separated from it by this table: the same workload under four memory placements. Row B, everything forced onto one socket: 16.8 seconds against the default's 19.3 — 11 to 13 percent saved, and that saving *is* the cross-socket cost, isolated. Row C, memory spread evenly across both sockets — which sounds fair and balanced — is the disaster of the table: 26 to 41 percent slower at every thread count, because alternating four-kilobyte pages between sockets breaks the hardware prefetcher, the unit that predicts and pre-loads what a core reads next. And row D, the deliberately worst case, lands where the default already is — telling us the default was already paying the cross-socket toll."
 
-### Slide 14 — Finding 2: Negative Composability (1:45)
+### Slide 13 — Finding 2: Negative Composability (1:45)
 
 Say: "Now the heart of the thesis. Five pairs of optimisations, each pair on a different hardware resource — output bandwidth, cache loading, thread coordination, ID encoding, memory placement. In every pair, both ideas are individually sensible, and several win on their own. Layered together, every single pair loses. Always the same shape: the first optimisation already absorbed the headroom, so the second one pays its overhead and recovers nothing. The extreme case: re-numbering IDs within each cluster so they need fewer bits — sounds strictly better, and it cost up to three and a half times the runtime, because the decoder's memory access pattern multiplied address-translation misses fifty-two-fold. Every one of the five had a plausible argument for composing positively. Every argument was falsified by the hardware counters. Five different resources, one shape — that is structure, not coincidence."
 
 This is your longest slide. Own it; slow down.
 
-### Slide 15 — Finding 3: Pre-Flight Ceiling Identification (1:15)
+### Slide 14 — Finding 3: Pre-Flight Ceiling Identification (1:15)
 
 Say: "If negative composability is the disease, this is the treatment. The normal performance loop — build it, measure it, keep it if faster — silently assumes improvements are independent. Here they are not: whether idea B helps depends on what the bottleneck is *after* everything already applied, and each applied optimisation moves the bottleneck. So, before building B: read the processor's event counters in exactly the configuration B would join. If B's target bottleneck no longer binds there, do not build it. If it does, predict the saving arithmetically, then measure in the cells where it matters, and count a negative result as a result. Five out of five times in this thesis, that check would have predicted failures that were instead discovered by paying the implementation cost. Nothing in the procedure is specific to Fainder."
 
-### Slide 16 — Dispatch on Regime (1:00)
+### Slide 15 — Dispatch on Regime (1:00)
 
 Say: "The deployment consequence: if optimisations do not stack, there is no single best build — so we ship a policy instead of a build. Give it the data size and the thread count, and it returns which build to run with which settings. Validation: on the grid it was derived from, it picks the measured best in 17 of 18 cells exactly, all 18 within five percent. The honest test is the held-out dataset it was never tuned on: six out of six cells within one percent of the best. Combined, 23 of 24. The table is specific to this machine and workload; the procedure that produces the table is not."
 
-### Slide 17 — Speedup over the Python Baseline (1:15)
+### Slide 16 — Speedup over the Python Baseline (1:15)
 
 Say: "Only now the headline number, because it needs decomposing to be honest. End-to-end, two and a half hours become sixteen seconds — 530 to 598 times. But about 99 percent of that ratio comes from Rust *not doing* something: Python builds a result dictionary for every query-cluster pair, and that bookkeeping is 97 to 99.8 percent of its wall time. Compare only the search engines — both with output turned off — and the picture is sober: 22.7 times on the small dataset, 4.6 in the middle, 1.34 on the largest, shrinking because both engines converge on the same hardware ceilings. Both columns are true, and the thesis never conflates them. Separately, the construction-side kernel we ported cuts the alignment step by about four point seven times at the smaller scales."
 
 If a committee member looks alarmed at 1.34, invite the question — backup slide B1 is exactly that.
 
-### Slide 18 — Positioning Against the State of the Art (1:00)
+### Slide 17 — Positioning Against the State of the Art (1:00)
 
 Say: "Positioning, briefly. The memory-access tradition — Manegold's result that memory, not compute, dominates in-memory databases — motivates our data layout. The compilation tradition — Neumann — motivates the port itself. The scheduling literature motivates work-stealing. Closest to the thesis: every composability tradition, from Selinger's additive cost models to modern interference-managing schedulers, assumes improvements combine. To our knowledge, nobody has documented what we found: five mechanism-grounded negative pairs, plus a check that predicts them. And the concrete gap we fill: nobody had characterised the hardware bottlenecks of histogram-based percentile search."
 
 Have ready if pushed on approximate systems (T-digest, HdrHistogram): those approximate quantiles over streams; Fainder answers exact predicates over precomputed histograms. Complementary, not competing.
 
-### Slide 19 — Contributions (0:30)
+### Slide 18 — Contributions (0:30)
 
 Say: "Five contributions. Two engineering: the validated engine and the dispatch policy. Three findings: the four ceilings, the negative-composability pattern, and the pre-flight check. The engineering is the staging ground; the findings are what generalises."
 
-### Slide 20 — Future Work (0:45)
+### Slide 19 — Future Work (0:45)
 
 Say: "Three follow-ups fall straight out of the findings. Huge memory pages — one address-translation entry covering five hundred times more memory — target exactly the mechanism that sank the ID re-numbering. A two-socket-aware build that keeps each cluster's data and its workers on the same socket is the path past ceiling four. And adaptive precision: full precision at low thread counts, half precision at high counts and sparse data — pick at runtime. Beyond those, widening the alternative engine's win region and validating the dispatch policy outside its tested density range."
 
-### Slide 21 — Closing Remark (0:30)
+### Slide 20 — Closing Remark (0:30)
 
 Say: "The speedups belong to this codebase, this processor, this workload. The structural finding travels: on hardware-near workloads, whether optimisation B helps depends on which ceiling optimisation A has already collected — and per-operator cost models cannot see that. So: identify the binding ceiling at the target composition before committing the implementation cost of the next optimisation. Thank you."
 
-### Slide 22 — Questions?
+### Slide 21 — Questions?
 
 Breathe. The backup slides are behind this one, in the order of Part 4.
 
@@ -259,6 +255,8 @@ Breathe. The backup slides are behind this one, in the order of Part 4.
 ## Part 4: Backup slides — how to use each
 
 Navigate past the Questions slide to reach them. Say "I have a slide on exactly that" and jump.
+
+**B0 — One Query, End to End (the worked example, now first in backup).** For any "how does a query actually execute" question. Walk it exactly as Part 9 describes: equivalence first (median > 20 ⟺ CDF(20) < 0.5), then τ picks the column, p picks the cut, operator picks the side, emit the ID slice; cluster B shows the out-of-range fast path.
 
 **B1 — Why is end-to-end 530× if search is only 1.34×?** The most likely question in the room. Answer: Python spends 96.9 to 99.8 percent of its wall on materialising result dicts per (query, cluster) — measured directly by differencing with-results and suppress runs. Rust does not have that cost structure at all. Both comparisons are reported; conflating them would credit Rust's search for Python's bookkeeping. If pushed on "so was the port even worth it?": yes — the user experiences end-to-end, and 2.5 hours versus 16 seconds is the deployed reality; the decomposition is about attributing the credit correctly, not shrinking it.
 
@@ -317,26 +315,25 @@ Target times (the scripts in Part 3 are written to these):
 | 1 | Title | 0:30 | 0:30 |
 | 2 | Outline | 0:20 | 0:50 |
 | 3 | Fainder | 1:00 | 1:50 |
-| 4 | Fainder in plain words | 1:15 | 3:05 |
-| 5 | One query, end to end | 1:00 | 4:05 |
-| 6 | Python baseline | 1:15 | 5:20 |
-| 7 | Goal and scope | 0:30 | 5:50 |
-| 8 | Setup | 1:00 | 6:50 |
-| 9 | Rust engine | 1:00 | 7:50 |
-| 10 | Four ceilings | 1:30 | 9:20 |
-| 11 | Ceiling (i) | 0:45 | 10:05 |
-| 12 | Ceiling (ii) | 1:30 | 11:35 |
-| 13 | Ceilings (iii)+(iv) | 1:00 | 12:35 |
-| 14 | Negative composability | 1:45 | 14:20 |
-| 15 | Pre-flight | 1:15 | 15:35 |
-| 16 | Dispatch | 1:00 | 16:35 |
-| 17 | Speedup | 1:15 | 17:50 |
-| 18 | Related work | 1:00 | 18:50 |
-| 19 | Contributions | 0:30 | 19:20 |
-| 20 | Future work | 0:45 | 20:05 |
-| 21 | Closing | 0:30 | 20:35 |
+| 4 | Fainder in plain words | 1:30 | 3:20 |
+| 5 | Python baseline | 1:15 | 4:35 |
+| 6 | Goal and scope | 0:30 | 5:05 |
+| 7 | Setup | 1:00 | 6:05 |
+| 8 | Rust engine | 1:00 | 7:05 |
+| 9 | Four ceilings | 1:30 | 8:35 |
+| 10 | Ceiling (i) | 0:45 | 9:20 |
+| 11 | Ceiling (ii) | 1:30 | 10:50 |
+| 12 | Ceilings (iii)+(iv) | 1:00 | 11:50 |
+| 13 | Negative composability | 1:45 | 13:35 |
+| 14 | Pre-flight | 1:15 | 14:50 |
+| 15 | Dispatch | 1:00 | 15:50 |
+| 16 | Speedup | 1:15 | 17:05 |
+| 17 | Related work | 1:00 | 18:05 |
+| 18 | Contributions | 0:30 | 18:35 |
+| 19 | Future work | 0:45 | 19:20 |
+| 20 | Closing | 0:30 | 19:50 |
 
-Thirty-five seconds over on paper, which rehearsal normally absorbs. If it does not, slides 11 and 19 compress to a sentence each. Rehearse against a timer; the dry run with Lennart is the place to calibrate which slides you naturally overrun.
+Ten seconds under budget with the worked example in backup. Rehearse against a timer; the dry run with Lennart is the place to calibrate which slides you naturally overrun.
 
 ---
 
