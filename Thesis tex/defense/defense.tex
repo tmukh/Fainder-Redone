@@ -201,47 +201,67 @@ Reviewers: Prof.\ Dr.\ Volker Markl, Prof.\ Dr.\ Matthias B\"ohm \quad Advisor: 
 \end{frame}
 
 \begin{frame}{Ceiling (ii): Shared L3 Capacity}
-  Wall-time ratio vs default on the primary workload ($<1$ = faster), suppress mode, 5-rep medians:
+  The claim: at $t \in [8,32]$ the threads' combined working sets overflow the shared 105\,MiB L3. Two probes ($<1$ = faster than default, primary workload):
   \begin{center}
-    \small
+    \footnotesize
     \begin{tabular}{lrrrrrr}
       \toprule
       Build & $t{=}1$ & $t{=}8$ & $t{=}16$ & $t{=}32$ & $t{=}64$ & $t{=}96$ \\
       \midrule
-      \texttt{pooled} & \good{$0.53$} & \good{$0.66$} & \good{$0.80$} & $0.95$ & $0.93$ & $1.02$ \\
-      \texttt{aos} (negative control) & $1.03$ & \bad{$1.17$} & $1.02$ & $1.00$ & \good{$0.96$} & $0.99$ \\
+      \texttt{aos} (capacity probe: doubles bytes/line) & $1.03$ & \bad{$1.17$} & $1.02$ & $1.00$ & \good{$0.96$} & $0.99$ \\
+      \texttt{pooled} (allocator probe: no per-cluster allocs) & \good{$0.53$} & \good{$0.66$} & \good{$0.80$} & $0.95$ & $0.93$ & $1.02$ \\
       \bottomrule
     \end{tabular}
   \end{center}
   \begin{itemize}
-    \item \texttt{pooled} wins where the allocator's arena mutex binds --- not an L3-capacity effect
-    \item AoS penalty at $t{=}8$ flips to a small win at $t{=}64$: the binding ceiling moves with $t$
-    \item \texttt{f16}: no standalone win; \bad{$+15.6\%$ drag} in bundle ($t{=}16$), yet \good{$-20.9\%$} on the sparse OOD --- sign flips with cluster density
+    \item \texttt{aos} changes \emph{only} footprint; its penalty sits inside the window ($+17\%$ at $t{=}8$, $\sim$2$\times$ L3 working set) and vanishes outside $\to$ capacity is real in $[8,32]$
+    \item Yet the biggest win in that window fixes the allocator's lock, not capacity --- and it fades ($0.66 \to 0.95$) as ceiling (iii) takes over
+    \item \texttt{f16} (halves bytes/value): null on the dense primary, pays $\sim$20\% at the sparse OOD density --- footprint only matters where it actually binds
   \end{itemize}
-  \vfill
-  Two mechanisms, one name: allocator queueing (dense), aggregate L3 footprint (sparse).
+  \smallskip
+  Verdict: one regime, two mechanisms --- allocator queueing on dense clusters, L3 footprint on sparse.
 \end{frame}
 
-\begin{frame}{Ceilings (iii) and (iv): Memory Traffic and the Socket Boundary}
-  (iii) Anti-scaling at $t \in [32,48]$: more cores, more wall. Traffic $\approx$ 0.5\% of STREAM peak $\to$ \textbf{pressure, not saturation}. Fix class: fewer bytes per comparison, per emit.
+\begin{frame}{Ceiling (iii): On-Socket Memory-Traffic Pressure}
+  What it is: all cores share the queues on the path to memory (L3 $\to$ mesh $\to$ memory controller). Each added core lengthens every queue, so \emph{every} access waits longer --- while total traffic sits at $\sim$0.5\% of STREAM peak. \textbf{Congestion, not saturation.}
   \vfill
-  (iv) Four-config \texttt{numactl} probe (primary workload, wall in seconds):
+  The signature, \texttt{c256\_30gb}, wall in seconds:
   \begin{center}
     \small
-    \begin{tabular}{lrrrr}
+    \begin{tabular}{lrrr}
       \toprule
-      Placement & $t{=}32$ & $t{=}48$ & $t{=}64$ & $t{=}96$ \\
+      Build & $t{=}64$ & $t{=}96$ & step \\
       \midrule
-      A: unpinned (first-touch) & $19.28$ & $16.97$ & $18.19$ & $17.58$ \\
-      B: single socket & \good{$\mathbf{16.77}$} & \good{$\mathbf{15.04}$} & -- & -- \\
-      C: 4\,KB interleave & \bad{$25.87$} & \bad{$23.73$} & \bad{$22.91$} & \bad{$24.83$} \\
-      D: cross-socket forced & $19.08$ & $16.86$ & -- & -- \\
+      default & $4.15$ & $5.89$ & \bad{$+42\%$} \quad (IPC $1.93 \to 0.55$, LLC misses $\times 1.6$) \\
+      \texttt{packed-ids} & $3.88$ & $4.70$ & \bad{$+21\%$} \quad (same step, half the damage) \\
       \bottomrule
     \end{tabular}
   \end{center}
   \begin{itemize}
-    \item B vs A: single socket saves \good{11--13\%} \quad C vs A: interleave costs \bad{26--41\%} (defeats the prefetcher)
-    \item D $\approx$ A: the unpinned baseline already pays the cross-socket cost
+    \item Anti-scaling: adding 32 cores makes the run $42\%$ \emph{slower}
+    \item Fix class $=$ fewer bytes per operation: \texttt{packed-ids} emits 20-bit instead of 32-bit IDs ($-37\%$ emit bytes) $\to$ \good{$-20\%$} at the anti-scaling cell
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Ceiling (iv): Cross-Socket UPI Interconnect}
+  Same workload, four memory placements (\texttt{numactl} probe, wall in seconds):
+  \begin{center}
+    \small
+    \begin{tabular}{llrrrr}
+      \toprule
+      Placement & meaning & $t{=}32$ & $t{=}48$ & $t{=}64$ & $t{=}96$ \\
+      \midrule
+      A: unpinned & OS default, first-touch & $19.28$ & $16.97$ & $18.19$ & $17.58$ \\
+      B: single socket & cores $+$ memory on socket 0 & \good{$\mathbf{16.77}$} & \good{$\mathbf{15.04}$} & -- & -- \\
+      C: interleave & pages alternate sockets per 4\,KB & \bad{$25.87$} & \bad{$23.73$} & \bad{$22.91$} & \bad{$24.83$} \\
+      D: cross-socket & memory socket 0, cores socket 1 & $19.08$ & $16.86$ & -- & -- \\
+      \bottomrule
+    \end{tabular}
+  \end{center}
+  \begin{itemize}
+    \item B vs A: removing all cross-socket traffic saves \good{11--13\%} --- that saving \emph{is} the link cost
+    \item C vs A: ``fair'' page balancing costs \bad{26--41\%}: half of all accesses land remote, and the per-page alternation defeats the prefetcher
+    \item D $\approx$ A: even the worst case matches default $\to$ the baseline was already paying the link
   \end{itemize}
 \end{frame}
 

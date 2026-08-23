@@ -4,7 +4,7 @@ These notes assume you remember nothing. Part 1 is the story in one page. Part 2
 
 Total budget: 20 minutes, 21 slides after the title. The script targets sum to about 20:35 (see the cheat sheet); if you are running long live, compress slides 10 (Ceiling i) and 19 (Contributions), which repeat material the committee has already heard.
 
-**DIMA checklist mapping** (from the course FAQ): comparison against the state of the art → slide 17; individual contributions → slide 18; unanticipated findings → slides 10 (ceiling (i) refuted), 12 (the f16 and pooled sign flips), and 14 (five falsified composition predictions, including the pre-registered local-ids one); future work → slide 19. Remaining items on you: the official Thesis Defense Template is on the course Moodle page — check whether the chair requires it before presenting from this deck — and schedule the 20-minute dry run with Lennart (he is unavailable after ~Sept 23).
+**DIMA checklist mapping** (from the course FAQ): comparison against the state of the art → slide 18; individual contributions → slide 19; unanticipated findings → slides 10 (ceiling (i) refuted), 12 (the f16 and pooled sign flips), and 14 (five falsified composition predictions, including the pre-registered local-ids one); future work → slide 20. Remaining items on you: the official Thesis Defense Template is on the course Moodle page — check whether the chair requires it before presenting from this deck — and schedule the 20-minute dry run with Lennart (he is unavailable after ~Sept 23).
 
 ---
 
@@ -200,53 +200,57 @@ Say: "First, what this ceiling is: binary search is a chain of reads where each 
 
 ### Slide 11 — Ceiling (ii): Shared L3 Capacity (1:30)
 
-Say: "The second ceiling looked like a cache-size story and turned out to be two stories. Look at the pooled row: 0.53 at one thread — nearly half the runtime gone — 0.66 at eight, 0.80 at sixteen, fading to nothing at high thread counts. What is it? Pre-allocated output buffers. Why does that help? At one thread it removes millions of little memory allocations; at eight and sixteen it also removes the queue — threads waiting in line on the memory allocator's internal lock instead of computing. Notice where it wins: exactly where the lock binds, not where cache capacity would. Second row, the AoS layout — our deliberate negative control, built to waste half of every cache line: it costs 17 percent at eight threads, then flips to a small *win* at 64 — the binding constraint itself moved. And the third piece, half-precision storage, the textbook cache fix: wins nothing standalone on the dense workload, drags the bundle down 15 percent at sixteen threads — yet the same feature saves 20 percent on the sparse held-out workload. Halving your data only helps if it moves you into a cache level you were missing before. So: one ceiling in name, two mechanisms in fact — allocator queueing on dense data, genuine cache pressure on sparse data."
+Say: "Ceiling two comes with a claim, two probes, and a verdict. The claim: between 8 and 32 threads, the threads' combined data overflows the 105-megabyte L3 — the last cache before RAM, shared by every core on the socket — and the scaling curve bends. First probe, top row: the AoS layout. It changes exactly one thing — every cache line it loads is half wasted — so it is a pure capacity probe. Look where its penalty lives: plus 17 percent at eight threads, inside the claimed window, and it vanishes outside it. So capacity pressure is real, and it is real exactly where the claim says. But now the second probe: the single biggest win in that same window is pooled buffers — and what pooled fixes is not capacity at all. It removes per-cluster allocations, so it removes the queue of threads waiting on the memory allocator's lock. And watch its win fade — 0.66, 0.80, 0.95 — exactly as the next ceiling takes over. Third piece: f16 halves the bytes per value, the pure footprint fix — and it wins nothing on the dense primary workload, but pays about twenty percent at the sparse out-of-distribution density, where the aggregate footprint genuinely binds. So the verdict: one regime, two mechanisms. On dense clusters the allocator lock binds first; on sparse ones it really is L3 footprint."
 
-This is the densest slide. The three bullets are three separate pieces of evidence; keep them in order.
+The table is your defense against "how do you know the window is [8,32]": the AoS penalty sits inside it and vanishes outside — that placement is the evidence. If pushed harder, the four-ceilings figure's regime shading comes from the same scaling-curve bend.
 
-### Slide 12 — Ceilings (iii) and (iv) (1:00)
+### Slide 12 — Ceiling (iii): On-Socket Memory-Traffic Pressure (1:00)
 
-Say: "Ceiling three: between 32 and 48 threads, wall time rises as cores are added. I deliberately do not call this a bandwidth limit — the measured traffic is about half a percent of what this machine's memory can actually stream. It is congestion, not saturation: too many cores queueing on the same path to memory. What helps is moving fewer bytes per operation. Ceiling four is separated from it by this table: the same workload under four memory placements. Row B, everything forced onto one socket: 16.8 seconds against the default's 19.3 — 11 to 13 percent saved, and that saving *is* the cross-socket cost, isolated. Row C, memory spread evenly across both sockets — which sounds fair and balanced — is the disaster of the table: 26 to 41 percent slower at every thread count, because alternating four-kilobyte pages between sockets breaks the hardware prefetcher, the unit that predicts and pre-loads what a core reads next. And row D, the deliberately worst case, lands where the default already is — telling us the default was already paying the cross-socket toll."
+Say: "Ceiling three needs its mechanism spelled out, because it is not a bandwidth story. All cores on a socket share the queues on the path to memory — level-three cache, the on-chip mesh, the memory controller. Every core you add lengthens those queues, so every access from every core waits a little longer. That can strangle you long before bandwidth runs out — and it does: total traffic sits at half a percent of what this machine's memory can stream. Congestion, not saturation. The table is the signature: on the medium dataset, going from 64 to 96 threads makes the default build 42 percent *slower* — anti-scaling — and the counters agree: instructions per cycle collapse from 1.9 to 0.55, cache misses up 60 percent. The fix class follows from the mechanism: put fewer bytes into the queues. Packed IDs — emitting results as 20-bit instead of 32-bit integers, about a third fewer emit bytes — takes the same thread step at half the damage, and wins 20 percent at the worst cell."
 
-### Slide 13 — Finding 2: Negative Composability (1:45)
+### Slide 13 — Ceiling (iv): Cross-Socket UPI Interconnect (1:00)
+
+Say: "Ceiling four is isolated by one controlled experiment: the identical workload under four memory placements. Row A is the default — the operating system places memory wherever a thread first touches it. Row B forces cores *and* memory onto one socket, so no data ever crosses the link between the sockets: 11 to 13 percent faster, and that saving *is* the link cost, measured. Row C is the placement that sounds fairest — spread the pages evenly, alternating sockets every four kilobytes — and it is the disaster of the table, 26 to 41 percent slower everywhere: half of all accesses land on the far socket, and the per-page alternation breaks the prefetcher, the hardware that pre-loads what you'll read next. Row D is the deliberate worst case — all memory on socket zero, all cores on socket one, every single access remote — and it lands where the default already is. Which tells you the default was already paying the link cost. Together: the link is a real ceiling, placement is the lever, and naive balancing moves it the wrong way."
+
+### Slide 14 — Finding 2: Negative Composability (1:45)
 
 Say: "Now the heart of the thesis. Five pairs of optimisations, each pair on a different hardware resource — output bandwidth, cache loading, thread coordination, ID encoding, memory placement. In every pair, both ideas are individually sensible, and several win on their own. Layered together, every single pair loses. Always the same shape: the first optimisation already absorbed the headroom, so the second one pays its overhead and recovers nothing. The extreme case: re-numbering IDs within each cluster so they need fewer bits — sounds strictly better, and it cost up to three and a half times the runtime, because the decoder's memory access pattern multiplied address-translation misses fifty-two-fold. Every one of the five had a plausible argument for composing positively. Every argument was falsified by the hardware counters. Five different resources, one shape — that is structure, not coincidence."
 
 This is your longest slide. Own it; slow down.
 
-### Slide 14 — Finding 3: Pre-Flight Ceiling Identification (1:15)
+### Slide 15 — Finding 3: Pre-Flight Ceiling Identification (1:15)
 
 Say: "If negative composability is the disease, this is the treatment. The normal performance loop — build it, measure it, keep it if faster — silently assumes improvements are independent. Here they are not: whether idea B helps depends on what the bottleneck is *after* everything already applied, and each applied optimisation moves the bottleneck. So, before building B: read the processor's event counters in exactly the configuration B would join. If B's target bottleneck no longer binds there, do not build it. If it does, predict the saving arithmetically, then measure in the cells where it matters, and count a negative result as a result. Five out of five times in this thesis, that check would have predicted failures that were instead discovered by paying the implementation cost. Nothing in the procedure is specific to Fainder."
 
-### Slide 15 — Dispatch on Regime (1:00)
+### Slide 16 — Dispatch on Regime (1:00)
 
 Say: "The deployment consequence: if optimisations do not stack, there is no single best build — so we ship a policy instead of a build. Give it the data size and the thread count, and it returns which build to run with which settings. Validation: on the grid it was derived from, it picks the measured best in 17 of 18 cells exactly, all 18 within five percent. The honest test is the held-out dataset it was never tuned on: six out of six cells within one percent of the best. Combined, 23 of 24. The table is specific to this machine and workload; the procedure that produces the table is not."
 
-### Slide 16 — Speedup over the Python Baseline (1:15)
+### Slide 17 — Speedup over the Python Baseline (1:15)
 
 Say: "Only now the headline number, because it needs decomposing to be honest. End-to-end, two and a half hours become sixteen seconds — 530 to 598 times. But about 99 percent of that ratio comes from Rust *not doing* something: Python builds a result dictionary for every query-cluster pair, and that bookkeeping is 97 to 99.8 percent of its wall time. Compare only the search engines — both with output turned off — and the picture is sober: 22.7 times on the small dataset, 4.6 in the middle, 1.34 on the largest, shrinking because both engines converge on the same hardware ceilings. Both columns are true, and the thesis never conflates them. Separately, the construction-side kernel we ported cuts the alignment step by about four point seven times at the smaller scales."
 
 If a committee member looks alarmed at 1.34, invite the question — backup slide B1 is exactly that.
 
-### Slide 17 — Positioning Against the State of the Art (1:00)
+### Slide 18 — Positioning Against the State of the Art (1:00)
 
 Say: "Positioning, briefly. The memory-access tradition — Manegold's result that memory, not compute, dominates in-memory databases — motivates our data layout. The compilation tradition — Neumann — motivates the port itself. The scheduling literature motivates work-stealing. Closest to the thesis: every composability tradition, from Selinger's additive cost models to modern interference-managing schedulers, assumes improvements combine. To our knowledge, nobody has documented what we found: five mechanism-grounded negative pairs, plus a check that predicts them. And the concrete gap we fill: nobody had characterised the hardware bottlenecks of histogram-based percentile search."
 
 Have ready if pushed on approximate systems (T-digest, HdrHistogram): those approximate quantiles over streams; Fainder answers exact predicates over precomputed histograms. Complementary, not competing.
 
-### Slide 18 — Contributions (0:30)
+### Slide 19 — Contributions (0:30)
 
 Say: "Five contributions. Two engineering: the validated engine and the dispatch policy. Three findings: the four ceilings, the negative-composability pattern, and the pre-flight check. The engineering is the staging ground; the findings are what generalises."
 
-### Slide 19 — Future Work (0:45)
+### Slide 20 — Future Work (0:45)
 
 Say: "Three follow-ups fall straight out of the findings. Huge memory pages — one address-translation entry covering five hundred times more memory — target exactly the mechanism that sank the ID re-numbering. A two-socket-aware build that keeps each cluster's data and its workers on the same socket is the path past ceiling four. And adaptive precision: full precision at low thread counts, half precision at high counts and sparse data — pick at runtime. Beyond those, widening the alternative engine's win region and validating the dispatch policy outside its tested density range."
 
-### Slide 20 — Closing Remark (0:30)
+### Slide 21 — Closing Remark (0:30)
 
 Say: "The speedups belong to this codebase, this processor, this workload. The structural finding travels: on hardware-near workloads, whether optimisation B helps depends on which ceiling optimisation A has already collected — and per-operator cost models cannot see that. So: identify the binding ceiling at the target composition before committing the implementation cost of the next optimisation. Thank you."
 
-### Slide 21 — Questions?
+### Slide 22 — Questions?
 
 Breathe. The backup slides are behind this one, in the order of Part 4.
 
@@ -323,17 +327,18 @@ Target times (the scripts in Part 3 are written to these):
 | 9 | Four ceilings | 1:30 | 8:35 |
 | 10 | Ceiling (i) | 0:45 | 9:20 |
 | 11 | Ceiling (ii) | 1:30 | 10:50 |
-| 12 | Ceilings (iii)+(iv) | 1:00 | 11:50 |
-| 13 | Negative composability | 1:45 | 13:35 |
-| 14 | Pre-flight | 1:15 | 14:50 |
-| 15 | Dispatch | 1:00 | 15:50 |
-| 16 | Speedup | 1:15 | 17:05 |
-| 17 | Related work | 1:00 | 18:05 |
-| 18 | Contributions | 0:30 | 18:35 |
-| 19 | Future work | 0:45 | 19:20 |
-| 20 | Closing | 0:30 | 19:50 |
+| 12 | Ceiling (iii) | 1:00 | 11:50 |
+| 13 | Ceiling (iv) | 1:00 | 12:50 |
+| 14 | Negative composability | 1:45 | 14:35 |
+| 15 | Pre-flight | 1:15 | 15:50 |
+| 16 | Dispatch | 1:00 | 16:50 |
+| 17 | Speedup | 1:15 | 18:05 |
+| 18 | Related work | 1:00 | 19:05 |
+| 19 | Contributions | 0:30 | 19:35 |
+| 20 | Future work | 0:45 | 20:20 |
+| 21 | Closing | 0:30 | 20:50 |
 
-Ten seconds under budget with the worked example in backup. Rehearse against a timer; the dry run with Lennart is the place to calibrate which slides you naturally overrun.
+Fifty seconds over on paper; you report reaching the end of the ceilings in ~13:00 spoken, which matches slide 13's 12:50 target almost exactly. The recovery slides if needed: 18 (Related work) compresses to 0:40 and 19 (Contributions) to a sentence. Rehearse against a timer; the dry run with Lennart is the place to calibrate.
 
 ---
 
