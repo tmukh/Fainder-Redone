@@ -269,9 +269,9 @@ Reviewers: Prof.\ Dr.\ Volker Markl, Prof.\ Dr.\ Matthias B\"ohm \quad Advisor: 
 \section{Results: Negative Composability}
 
 \begin{frame}{Finding 2: Optimisations Compose Negatively}
-  Five pairs, five axes, one shape: \emph{the coarser optimisation absorbed the headroom; the finer one's overhead becomes net cost.}
+  \bcombo{} $=$ the six winning features bundled (\texttt{pooled f16 simd pin-cores cluster-prefetch mimalloc}), $0.773\times$ default wall at $t{=}16$. One more optimisation on top:
   \begin{center}
-    \small
+    \footnotesize
     \begin{tabular}{llr}
       \toprule
       Composition & Intended axis & Outcome \\
@@ -284,40 +284,49 @@ Reviewers: Prof.\ Dr.\ Volker Markl, Prof.\ Dr.\ Matthias B\"ohm \quad Advisor: 
       \bottomrule
     \end{tabular}
   \end{center}
+  {\footnotesize qbatch: batch $K$ queries per cluster visit \quad morsel: cross-worker coordination \quad \texttt{local-ids}: per-cluster renumbering}
   \begin{itemize}
-    \item Every pair had a plausible positive argument; every one falsified by \texttt{perf} counters
-    \item Five axes, one shape: structural, not coincidence
+    \item One shape, five axes: the coarser optimisation absorbed the headroom, the finer one's overhead turns net cost --- every plausible positive argument falsified by \texttt{perf}. Structural, not coincidence
   \end{itemize}
 \end{frame}
 
 \begin{frame}{Finding 3: Pre-Flight Ceiling Identification}
-  Classical ablation (build $\to$ measure $\to$ keep) assumes optimisations are independent. Here they are not: what helps depends on the binding ceiling \emph{at the target composition}.
+  Classical ablation (build $\to$ measure vs default $\to$ keep if faster) assumes optimisations are independent. With stacked ceilings, whether $B$ helps depends on the binding ceiling \emph{at the target composition}.
   \vfill
   Before writing code:
   \begin{enumerate}
     \item Probe the binding ceiling at the target composition (\texttt{perf})
-    \item Does the ablation's axis still bind there? If not: stop
+    \item Axis no longer binds there? Stop
     \item Predict the saving (bandwidth-budget arithmetic)
     \item Measure where the ceiling binds; separate saving from overhead
     \item A negative composition counts as a result
   \end{enumerate}
   \vfill
-  Applies to any hardware-near system with stacked ceilings.
+  Machine-agnostic: applies to any hardware-near system with stacked ceilings.
 \end{frame}
 
 \begin{frame}{Dispatch on Regime}
   \begin{itemize}
     \item No dominating build $\to$ per-regime selection: $(n_\text{hists}, t) \to$ build $+$ flags
     \item \bcombo{} at moderate $t$ / big data; \texttt{packed-ids} at $t{=}64$; qbatch at $t{=}96$; columnar at low $t$; default on small data
+    \item In-distribution: \good{17/18} exact, \good{18/18} within 5\% --- combined with OOD: \good{23/24}
   \end{itemize}
-  \vfill
-  Validation:
-  \begin{itemize}
-    \item In-distribution: \good{17/18} exact, \good{18/18} within 5\%
-    \item Out-of-distribution ($3.2\times$ sparser, never tuned on): \good{6/6} within 1\%
-    \item Combined: \good{23/24}
-  \end{itemize}
-  \vfill
+  \smallskip
+  Out-of-distribution validation (\texttt{c1024\_56gb}, $3.2\times$ sparser, never tuned on):
+  \begin{center}
+    \footnotesize
+    \begin{tabular}{rllr}
+      \toprule
+      $t$ & policy pick & regime-best & gap \\
+      \midrule
+      1 & qbatch $K{=}64$ & qbatch $K{=}128$ & \good{$+0.9\%$} \\
+      8--32 & \bcombo{} & \bcombo{} & \good{$0.0\%$} \\
+      64 & \texttt{packed-ids} & \bcombo{} & \good{$+0.2\%$} \\
+      96 & qbatch $K{=}128$ & qbatch $K{=}128$ & \good{$0.0\%$} \\
+      \bottomrule
+    \end{tabular}
+  \end{center}
+  \smallskip
   Boundaries are machine-specific; the probing procedure is not.
 \end{frame}
 
