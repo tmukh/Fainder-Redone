@@ -341,7 +341,8 @@ Reviewers: Prof.\ Dr.\ Volker Markl, Prof.\ Dr.\ Matthias B\"ohm \quad Advisor: 
 \section{Results: Negative Composability}
 
 \begin{frame}{Finding 2: Optimisations Compose Negatively}
-  \bcombo{} $=$ six features, each regime-best somewhere, bundled (\texttt{pooled f16 simd pin-cores cluster-prefetch mimalloc}): $0.773\times$ default wall at $t{=}16$. One more optimisation on top:
+  \bcombo{} $=$ \texttt{pooled f16 simd pin-cores cluster-prefetch mimalloc} --- each regime-best somewhere; $0.773\times$ default wall at $t{=}16$.\\
+  {\footnotesize Layering one more optimisation on top:}
   \begin{center}
     \footnotesize
     \begin{tabular}{llr}
@@ -358,7 +359,8 @@ Reviewers: Prof.\ Dr.\ Volker Markl, Prof.\ Dr.\ Matthias B\"ohm \quad Advisor: 
   \end{center}
   {\footnotesize qbatch: batch $K$ queries per cluster visit \quad morsel: cross-worker coordination \quad \texttt{local-ids}: per-cluster renumbering}
   \begin{itemize}
-    \item One shape, five axes: the coarser optimisation absorbed the headroom, the finer one's overhead turns net cost --- every plausible positive argument falsified by \texttt{perf}. Structural, not coincidence
+    \item The coarser optimisation absorbed the headroom; the finer one's overhead turns net cost
+    \item All five plausible arguments falsified by \texttt{perf} --- five axes, one shape: structural, not coincidence
   \end{itemize}
 \end{frame}
 
