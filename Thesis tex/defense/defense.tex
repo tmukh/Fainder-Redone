@@ -11,7 +11,7 @@
 \usepackage{amsmath}
 \usepackage{graphicx}
 \usepackage{tikz}
-\usetikzlibrary{arrows.meta, positioning}
+\usetikzlibrary{arrows.meta, positioning, decorations.pathreplacing}
 \graphicspath{{../img/gen/}{../img/}}
 
 \newcommand{\bcombo}{\texttt{best-combo}}
@@ -189,14 +189,33 @@ Reviewers: Prof.\ Dr.\ Volker Markl, Prof.\ Dr.\ Matthias B\"ohm \quad Advisor: 
       \item Cross-socket link ($t > 48$)
     \end{enumerate}
     \vfill
-    Ceiling $=$ the hardware limit that binds wall time in a thread range --- what you would have to fix to go faster there. More threads don't raise it; only the right intervention class does.
+    % Ceiling $=$ the hardware limit that binds wall time in a thread range --- what you would have to fix to go faster there. More threads don't raise it; only the right intervention class does.
   \end{columns}
 \end{frame}
 
 \begin{frame}{Ceiling (i): Single-Thread Latency, Refuted}
-  What it is: binary search is a \textbf{dependent-load chain} --- probe $i{+}1$ cannot start until probe $i$ returns. The literature's default bottleneck for in-memory search.
   \begin{center}
-    \small
+  \resizebox{0.9\linewidth}{!}{%
+  \begin{tikzpicture}[
+      probe/.style={draw, rounded corners=1pt, font=\footnotesize, inner sep=4pt, minimum height=6mm},
+      arr/.style={-{Stealth[length=2mm]}, thick}]
+    \node[probe] (p1) {probe 1};
+    \node[probe, right=6mm of p1] (p2) {probe 2};
+    \node[probe, right=6mm of p2] (p3) {probe 3};
+    \node[right=4mm of p3] (d) {$\cdots$};
+    \node[probe, right=4mm of d] (p5) {probe 21};
+    \node[probe, right=6mm of p5] (p6) {probe 22};
+    \draw[arr] (p1) -- node[below=1pt, font=\scriptsize] {waits} (p2);
+    \draw[arr] (p2) -- node[below=1pt, font=\scriptsize] {waits} (p3);
+    \draw[arr] (p3) -- (d);
+    \draw[arr] (d) -- (p5);
+    \draw[arr] (p5) -- (p6);
+    \draw[arr, orange!85!black, dashed] (p1.north) to[bend left=22] node[above, font=\scriptsize] {\texttt{pgm}: predict the landing, skip the chain} (p5.north);
+    \draw[orange!85!black, decorate, decoration={brace, mirror, amplitude=4pt}] ([yshift=-2.5mm]p5.south west) -- ([yshift=-2.5mm]p6.south east) node[midway, below=5pt, font=\scriptsize] {\texttt{simd}: last 16 values, one compare};
+  \end{tikzpicture}}
+  \end{center}
+  \begin{center}
+    \footnotesize
     \begin{tabular}{llr}
       \toprule
       Ablation & Idea & vs default, all 18 cells \\
@@ -209,9 +228,7 @@ Reviewers: Prof.\ Dr.\ Volker Markl, Prof.\ Dr.\ Matthias B\"ohm \quad Advisor: 
     \end{tabular}
   \end{center}
   \begin{itemize}
-    \item Counters at $t{=}1$: IPC $\approx 1.9$, L1d miss/load $0.5$--$0.7\%$ --- the chains are cache-resident
-    \item PGM verifiably cuts chain depth to $O(\log\log n)$; the wall does not move
-    \item The wall is the \emph{number} of chains, not their depth: 10\,K queries $\times$ 191 clusters $\times$ 2 searches $\approx$ 3.8\,M chains of $\sim$22 cheap probes each
+    \item All four: null. The wall is the \emph{number} of chains, not their depth: 10\,K queries $\times$ 191 clusters $\times$ 2 searches $\approx$ 3.8\,M chains of $\sim$22 cheap, cache-resident probes
   \end{itemize}
 \end{frame}
 
