@@ -245,13 +245,36 @@ Reviewers: Prof.\ Dr.\ Volker Markl, Prof.\ Dr.\ Matthias B\"ohm \quad Advisor: 
       \bottomrule
     \end{tabular}
   \end{center}
-  \begin{itemize}
-    \item \texttt{aos} changes \emph{only} footprint; its penalty sits inside the window ($+17\%$ at $t{=}8$, $\sim$2$\times$ L3 working set) and vanishes outside $\to$ capacity is real in $[8,32]$
-    \item Yet the biggest win in that window fixes the allocator's lock, not capacity --- and it fades ($0.66 \to 0.95$) as ceiling (iii) takes over
-    \item \texttt{f16} (halves bytes/value): null on the dense primary, pays $\sim$20\% at the sparse OOD density --- footprint only matters where it actually binds
-  \end{itemize}
-  \smallskip
-  Verdict: one regime, two mechanisms --- allocator queueing on dense data (few huge clusters), L3 footprint on sparse data (many small clusters).
+  \begin{center}
+  \resizebox{0.96\linewidth}{!}{%
+  \begin{tikzpicture}[
+      th/.style={draw, rounded corners=1pt, font=\scriptsize, inner sep=2.5pt},
+      arr/.style={-{Stealth[length=1.8mm]}, thick}]
+    % ---- dense panel: queue at the lock
+    \node[font=\scriptsize\bfseries] at (2.1,1.6) {dense: queue at the lock};
+    \node[th] (t1) at (0,0.95) {T1};
+    \node[th] (t2) at (0,0.45) {T2};
+    \node[th] (t3) at (0,-0.05) {T3};
+    \node[draw, align=center, font=\scriptsize] (lock) at (2.1,0.45) {allocator\\lock};
+    \node[draw, font=\scriptsize] (buf) at (4.2,0.45) {buffer};
+    \draw[arr] (t1.east) -- (lock.west);
+    \draw[arr] (t2.east) -- node[above, font=\tiny] {wait} (lock.west);
+    \draw[arr] (t3.east) -- (lock.west);
+    \draw[arr] (lock.east) -- node[above, font=\tiny] {one at a time} (buf.west);
+    \node[font=\scriptsize] at (2.1,-0.85) {fix: \texttt{pooled} --- one buffer per query, queue gone};
+    % ---- sparse panel: churn through the L3
+    \node[font=\scriptsize\bfseries] at (9.0,1.6) {sparse: churn through the shared L3};
+    \draw[thick] (6.8,-0.2) rectangle (10.6,1.1);
+    \node[font=\tiny] at (8.7,0.92) {shared L3 (105\,MiB)};
+    \foreach \x/\y in {7.05/0.55, 7.5/0.55, 7.95/0.55, 8.4/0.55, 8.85/0.55, 9.3/0.55, 9.75/0.55, 10.2/0.55, 7.05/0.08, 7.5/0.08, 7.95/0.08, 8.4/0.08, 8.85/0.08, 9.3/0.08}
+      \fill[orange!60] (\x,\y) rectangle ++(0.3,0.3);
+    \node[draw, font=\scriptsize] (ram) at (12.1,0.45) {RAM};
+    \draw[arr] (10.6,0.7) -- node[above, font=\tiny] {evicted} (ram.170);
+    \draw[arr] (ram.190) -- node[below, font=\tiny] {refetched} (10.6,0.2);
+    \node[font=\scriptsize] at (9.4,-0.85) {fix: \texttt{f16} --- half the bytes, twice as much stays resident};
+  \end{tikzpicture}}
+  \end{center}
+  Two culprits, one thread range: the \textbf{lock} on dense data, the \textbf{cache} on sparse --- the data's shape decides which binds.
 \end{frame}
 
 \begin{frame}{Ceiling (iii): On-Socket Memory-Traffic Pressure}
