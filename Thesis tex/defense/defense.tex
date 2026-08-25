@@ -233,7 +233,8 @@ Reviewers: Prof.\ Dr.\ Volker Markl, Prof.\ Dr.\ Matthias B\"ohm \quad Advisor: 
 \end{frame}
 
 \begin{frame}{Ceiling (ii): Shared L3 Capacity}
-  The claim: at $t \in [8,32]$ the threads' combined working sets overflow the shared 105\,MiB L3. Two probes ($<1$ = faster than default, primary workload):
+  Claim: at $t \in [8,32]$, the threads' combined working sets overflow the shared 105\,MiB L3.\\
+  {\footnotesize Two probes --- ratio vs default on the primary workload, $<1$ = faster:}
   \begin{center}
     \footnotesize
     \begin{tabular}{lrrrrrr}
@@ -278,9 +279,26 @@ Reviewers: Prof.\ Dr.\ Volker Markl, Prof.\ Dr.\ Matthias B\"ohm \quad Advisor: 
 \end{frame}
 
 \begin{frame}{Ceiling (iii): On-Socket Memory-Traffic Pressure}
-  What it is: all cores share the queues on the path to memory (L3 $\to$ mesh $\to$ memory controller). Each added core lengthens every queue, so \emph{every} access waits longer --- while total traffic sits at $\sim$0.5\% of STREAM peak (the machine's measured maximum memory throughput). \textbf{Congestion, not saturation.}
-  \vfill
-  The signature, \texttt{c256\_30gb}, wall in seconds:
+  \begin{center}
+  \begin{tikzpicture}[
+      core/.style={draw, rounded corners=1pt, font=\scriptsize, inner sep=2.5pt},
+      arr/.style={-{Stealth[length=1.8mm]}, thick}]
+    \node[core] (c1) at (0,1.0) {C1};
+    \node[core] (c2) at (0,0.62) {C2};
+    \node at (0,0.3) {$\vdots$};
+    \node[core] (c4) at (0,-0.1) {C48};
+    \node[draw, align=center, font=\scriptsize] (q) at (2.9,0.45) {shared queues\\(L3 $\to$ mesh $\to$ controller)};
+    \node[draw, font=\scriptsize] (ram) at (6.2,0.45) {RAM};
+    \draw[arr] (c1.east) -- (q.west);
+    \draw[arr] (c2.east) -- node[above, font=\tiny] {wait} (q.west);
+    \draw[arr] (c4.east) -- (q.west);
+    \draw[arr] (q.east) -- node[above, font=\tiny] {fixed service rate} (ram.west);
+  \end{tikzpicture}
+  \end{center}
+  One road, more requesters $\to$ longer queues, at $\sim$0.5\% of STREAM peak: \textbf{congestion, not saturation}.
+  \smallskip
+
+  {\footnotesize The signature, \texttt{c256\_30gb}, wall in seconds:}
   \begin{center}
     \small
     \begin{tabular}{lrrr}
@@ -293,8 +311,7 @@ Reviewers: Prof.\ Dr.\ Volker Markl, Prof.\ Dr.\ Matthias B\"ohm \quad Advisor: 
     \end{tabular}
   \end{center}
   \begin{itemize}
-    \item Anti-scaling: adding 32 cores makes the run $42\%$ \emph{slower}
-    \item Fix class $=$ fewer bytes per operation: \texttt{packed-ids} emits 20-bit instead of 32-bit IDs ($-37\%$ emit bytes) $\to$ \good{$-20\%$} at the anti-scaling cell
+    \item Anti-scaling: 32 added cores, $42\%$ \emph{slower}. Fix $=$ fewer bytes: \texttt{packed-ids} (20-bit IDs, $-37\%$ emit bytes) $\to$ \good{$-20\%$} at the worst cell
   \end{itemize}
 \end{frame}
 
