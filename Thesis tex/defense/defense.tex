@@ -462,10 +462,8 @@ Reviewers: Prof.\ Dr.\ Volker Markl, Prof.\ Dr.\ Matthias B\"ohm \quad Advisor: 
 
 \begin{frame}{Future Work}
   \begin{itemize}
-    \item (F1) Transparent Huge Pages: $512\times$ fewer TLB misses per covered page $\to$ targets the local-ids mechanism
-    \item (F2) NUMA-aware build for $t > 48$: shard clusters across sockets, node-local workers
-    \item (F3) Adaptive precision: f32 at low $t$, f16 at high $t$ / sparse density, selected at runtime
-    \item Column-centric: widen its $t{=}1$ win ($2.17$--$2.63\times$) by fixing cross-cluster imbalance
+    \item NUMA-aware build for $t > 48$: shard clusters across sockets, node-local workers
+    \item Adaptive precision: f32 at low $t$, f16 at high $t$ / sparse density, selected at runtime
     \item Dispatch validation beyond the $\sim$8.2\,K--26.3\,K hists/cluster range
   \end{itemize}
 \end{frame}
