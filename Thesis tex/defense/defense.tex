@@ -291,7 +291,7 @@ Reviewers: Prof.\ Dr.\ Volker Markl, Prof.\ Dr.\ Matthias B\"ohm \quad Advisor: 
 \end{frame}
 
 \begin{frame}{Finding 3: Pre-Flight Ceiling Identification}
-  Classical ablation (build $\to$ measure vs default $\to$ keep if faster) assumes optimisations are independent. With stacked ceilings, whether $B$ helps depends on the binding ceiling \emph{at the target composition}.
+  Classical ablation: build $\to$ measure vs default $\to$ keep if faster. Assumes independence --- falsified five times on the last slide.
   \vfill
   Before writing code:
   \begin{enumerate}
@@ -362,13 +362,13 @@ Reviewers: Prof.\ Dr.\ Volker Markl, Prof.\ Dr.\ Matthias B\"ohm \quad Advisor: 
 
 \begin{frame}{Positioning Against the State of the Art}
   \begin{itemize}
-    \item Layouts: Manegold et al.\ [2000] --- memory access dominates $\to$ our SoA; ART, Eytzinger, learned indexes target cache behaviour
-    \item On heterogeneous, cache-resident arrays: classical binary search wins (consistent with ceiling (i))
-    \item Execution: Neumann [2011] compile-don't-interpret $\to$ the port; Leis et al.\ [2014] $\to$ work-stealing
-    \item Composability traditions (Selinger [1979]; Caladan [2020]; memory-wall) assume gains compose
-    \item No prior documentation of five mechanism-grounded negative pairs $+$ a falsifiable pre-flight check
-    \item Gap filled: first hardware characterisation of histogram-based percentile search; first horizontal-SIMD measurement on Sapphire Rapids
+    \item \textbf{Layout --- adopted.} Manegold et al.\ [2000]: memory access dominates in-memory work $\to$ our SoA layout
+    \item \textbf{Search --- refuted.} FAST [Kim 2010], Eytzinger [Khuong, Morin 2017], $k$-ary [Schlegel 2009], PGM [Ferragina 2020]: all assume latency-bound search --- ceiling (i) says no, on this workload
+    \item \textbf{Execution --- followed.} Neumann [2011]: compile, don't interpret $\to$ the port itself; morsel-driven [Leis 2014] $\to$ work-stealing
+    \item \textbf{Composition --- challenged.} Selinger [1979], Caladan [2020], memory-wall [Wulf, McKee 1995]: all assume gains compose $\to$ five mechanism-grounded counterexamples $+$ a falsifiable pre-flight check
   \end{itemize}
+  \vfill
+  Gap filled: first hardware characterisation of histogram-based percentile search; first horizontal-SIMD measurement on Sapphire Rapids.
 \end{frame}
 
 % ---------------------------------------------------------------- 7. Wrap-up
