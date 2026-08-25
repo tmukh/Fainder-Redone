@@ -39,17 +39,13 @@ Reviewers: Prof.\ Dr.\ Volker Markl, Prof.\ Dr.\ Matthias B\"ohm \quad Advisor: 
 \begin{frame}{Distribution-Aware Dataset Search and Fainder}
   \begin{itemize}
     \item Raw data not searchable (privacy, licensing, scale) $\to$ per-column \textbf{histograms}
-    \item Predicate class: \emph{``$p$-th percentile $\bowtie$ threshold $\tau$''}
-    \item \textbf{Fainder} [Behme et al., VLDB 2024]:
-    \begin{itemize}
-      \item K-means clusters $\to$ shared bin grid per cluster $\to$ precomputed cumulative densities
-      \item Percentile predicate $\Rightarrow$ \textbf{binary search}
-    \end{itemize}
-    \item GitTables, 5M histograms: $>$2 orders of magnitude vs profile scan, 1\,TB $\to$ 3.2\,GB
+    \item Predicate class: \emph{``find all columns whose $p$-th percentile exceeds threshold $\tau$''}
+    \item \textbf{Fainder} [Behme et al., VLDB 2024]: the histogram scan becomes a handful of \textbf{binary searches}
+    \item GitTables: 5M histograms across $\sim$1M tables; $>$2 orders of magnitude vs profile scan, 1\,TB $\to$ 3.2\,GB
   \end{itemize}
   \vfill
   \begin{alertblock}{This thesis}
-    How does Fainder's query phase run on a modern multi-core server, and what makes it fast?
+    How does Fainder's query phase run on a modern multi-core server?
   \end{alertblock}
 \end{frame}
 
@@ -72,12 +68,33 @@ Reviewers: Prof.\ Dr.\ Volker Markl, Prof.\ Dr.\ Matthias B\"ohm \quad Advisor: 
     \draw[arr] (d) -- (e);
   \end{tikzpicture}}
   \end{center}
+  \begin{columns}[T]
+    \column{0.54\textwidth}
+    \centering
+    {\small One cluster's x-axis (its bin edges):}\\[1.5ex]
+    \begin{tikzpicture}
+      \draw[thick] (0,0) -- (5.6,0);
+      \foreach \x/\l in {0.2/0, 1.4/10, 2.6/20, 3.8/30, 5.4/50} {
+        \draw[thick] (\x,0.12) -- (\x,-0.12) node[below, font=\footnotesize] {\l};
+      }
+      \draw[<-, very thick, orange!85!black] (2.6,0.2) -- (2.6,0.85) node[above, font=\footnotesize] {query: $\tau = 20$};
+    \end{tikzpicture}
+    \column{0.42\textwidth}
+    \centering
+    {\small At that tick, one sorted list:}\\[1ex]
+    \footnotesize
+    \begin{tabular}{ll}
+      \toprule
+      sorted CDFs at $\leq$20 & IDs \\
+      \midrule
+      $[0.25,\ 0.45,\ 0.50]$ & H2 H5 H1 \\
+      \bottomrule
+    \end{tabular}
+  \end{columns}
+  \vfill
   \begin{itemize}
-    \item Histogram $=$ ``how many values fall in each range''
-    \item One family, one x-axis: the same question lands at the same position everywhere
-    \item Stored per x-axis point: the fraction of each column's values below it --- \textbf{sorted}, with IDs
-    \item Sorted $=$ binary-searchable: $\sim$191 short lists, never 5M summaries
-    \item \alert{``median $> 20$'' $\iff$ ``fraction of values $\leq 20$ is $< 0.5$''}: $\tau$ picks the list, $p$ picks the cut
+    \item Per tick, one sorted list: the fraction of each column's values below that point
+    \item \alert{``median $> 20$'' $\iff$ ``fraction $\leq 20$ is $< 0.5$''}: $\tau$ picks the list, $p$ picks the cut
     \item Clusters are independent $\to$ parallel. Search $=$ few dependent reads; emit $=$ many writes
   \end{itemize}
 \end{frame}
@@ -88,8 +105,7 @@ Reviewers: Prof.\ Dr.\ Volker Markl, Prof.\ Dr.\ Matthias B\"ohm \quad Advisor: 
     \begin{itemize}
       \item GIL: one thread at a time; \texttt{searchsorted} never releases it
       \item Thread sweep \textbf{flat}: 2\% spread at any $t$
-      \item AoS layout: unread ID next to every value
-      \item Interpreter dispatch on every iteration
+      \item AoS layout: value--ID pairs, only values read during search $\to$ half of every line wasted
     \end{itemize}
     \column{0.42\textwidth}
     \begin{block}{10{,}000 queries, 5M histograms}
@@ -107,7 +123,7 @@ Reviewers: Prof.\ Dr.\ Volker Markl, Prof.\ Dr.\ Matthias B\"ohm \quad Advisor: 
 
 \begin{frame}{Goal and Scope}
   \begin{itemize}
-    \item Close the algorithm--implementation gap; query results unchanged
+    \item Close the algorithm--implementation gap
     \item Rust query engine behind the existing Python API (PyO3); $>$20 optimisation axes ablated
     \item Constraint: bitwise-identical results, precision $=$ recall $=$ 1.000, every build
     \item Out of scope: algorithm changes, GPU, distributed execution
@@ -154,7 +170,6 @@ Reviewers: Prof.\ Dr.\ Volker Markl, Prof.\ Dr.\ Matthias B\"ohm \quad Advisor: 
       \item layout: SoA / AoS, f16, packed IDs \quad search: AVX-512, 8-way batch, lockstep, PGM
       \item scheduling: column-centric, query-batch, morsel, pinning \quad memory: pooled, mimalloc, NUMA
     \end{itemize}
-    \item Every build validates bitwise-identical against the reference
   \end{itemize}
 \end{frame}
 
