@@ -95,7 +95,7 @@ Reviewers: Prof.\ Dr.\ Volker Markl, Prof.\ Dr.\ Matthias B\"ohm \quad Advisor: 
   \begin{itemize}
     \item Per tick, one sorted list: the fraction of each column's values below that point
     \item \alert{``median $> 20$'' $\iff$ ``fraction $\leq 20$ is $< 0.5$''}: $\tau$ picks the list, $p$ picks the cut
-    \item Clusters are independent $\to$ parallel. Search $=$ few dependent reads; emit $=$ many writes
+    \item Clusters are independent $\to$ parallel. Search $=$ few dependent reads, emit $=$ many writes
   \end{itemize}
 \end{frame}
 
@@ -103,7 +103,7 @@ Reviewers: Prof.\ Dr.\ Volker Markl, Prof.\ Dr.\ Matthias B\"ohm \quad Advisor: 
   \begin{columns}[T]
     \column{0.55\textwidth}
     \begin{itemize}
-      \item GIL: one thread at a time; \texttt{searchsorted} never releases it
+      \item GIL: one thread at a time, and \texttt{searchsorted} never releases it
       \item Thread sweep \textbf{flat}: 2\% spread at any $t$
       \item AoS layout: value--ID pairs, only values read during search $\to$ half of every line wasted
     \end{itemize}
@@ -116,7 +116,7 @@ Reviewers: Prof.\ Dr.\ Volker Markl, Prof.\ Dr.\ Matthias B\"ohm \quad Advisor: 
   \end{columns}
   \vfill
   \begin{itemize}
-    \item IPC 2.35 vs Rust's 0.96 --- yet $378\times$ slower: $6.2\times$ the instructions, one effective core
+    \item IPC 2.35 vs Rust's 0.96, yet $378\times$ slower: $6.2\times$ the instructions, one effective core
     \item Rust wins by executing fewer instructions across all cores in parallel, not by winning on IPC
   \end{itemize}
 \end{frame}
@@ -124,7 +124,7 @@ Reviewers: Prof.\ Dr.\ Volker Markl, Prof.\ Dr.\ Matthias B\"ohm \quad Advisor: 
 \begin{frame}{Goal and Scope}
   \begin{itemize}
     \item Close the algorithm--implementation gap
-    \item Rust query engine behind the existing Python API (PyO3); $>$20 optimisation axes ablated
+    \item Rust query engine behind the existing Python API (PyO3), with $>$20 optimisation axes ablated
     \item Constraint: bitwise-identical results, precision $=$ recall $=$ 1.000, every build
     \item Out of scope: algorithm changes, GPU, distributed execution
   \end{itemize}
@@ -156,8 +156,8 @@ Reviewers: Prof.\ Dr.\ Volker Markl, Prof.\ Dr.\ Matthias B\"ohm \quad Advisor: 
     \end{tabular}
   \end{center}
   \begin{itemize}
-    \item Same 10K queries everywhere; 5-rep medians; $t \in \{1 \dots 96\}$; \texttt{perf} counters per cell
-    \item 2{,}658 runs; every claim traces to a benchmark-database row
+    \item Same 10K queries everywhere, 5-rep medians, $t \in \{1 \dots 96\}$, \texttt{perf} counters per cell
+    \item 2{,}658 runs, every claim traceable to a benchmark-database row
   \end{itemize}
 \end{frame}
 
@@ -234,7 +234,7 @@ Reviewers: Prof.\ Dr.\ Volker Markl, Prof.\ Dr.\ Matthias B\"ohm \quad Advisor: 
 
 \begin{frame}{Ceiling (ii): Shared L3 Capacity}
   Claim: at $t \in [8,32]$, the threads' combined working sets overflow the shared 105\,MiB L3.\\
-  {\footnotesize Two probes --- ratio vs default on the primary workload, $<1$ = faster:}
+  {\footnotesize Two probes (ratio vs default on the primary workload, $<1$ = faster):}
   \begin{center}
     \footnotesize
     \begin{tabular}{lrrrrrr}
@@ -262,7 +262,7 @@ Reviewers: Prof.\ Dr.\ Volker Markl, Prof.\ Dr.\ Matthias B\"ohm \quad Advisor: 
     \draw[arr] (t2.east) -- node[above, font=\tiny] {wait} (lock.west);
     \draw[arr] (t3.east) -- (lock.west);
     \draw[arr] (lock.east) -- node[above, font=\tiny] {one at a time} (buf.west);
-    \node[font=\scriptsize] at (2.1,-0.85) {fix: \texttt{pooled} --- one buffer per query, queue gone};
+    \node[font=\scriptsize] at (2.1,-0.85) {fix: \texttt{pooled} (one buffer per query, queue gone)};
     % ---- sparse panel: churn through the L3
     \node[font=\scriptsize\bfseries] at (9.0,1.6) {sparse: churn through the shared L3};
     \draw[thick] (6.8,-0.2) rectangle (10.6,1.1);
@@ -272,10 +272,10 @@ Reviewers: Prof.\ Dr.\ Volker Markl, Prof.\ Dr.\ Matthias B\"ohm \quad Advisor: 
     \node[draw, font=\scriptsize] (ram) at (12.1,0.45) {RAM};
     \draw[arr] (10.6,0.7) -- node[above, font=\tiny] {evicted} (ram.170);
     \draw[arr] (ram.190) -- node[below, font=\tiny] {refetched} (10.6,0.2);
-    \node[font=\scriptsize] at (9.4,-0.85) {fix: \texttt{f16} --- half the bytes, twice as much stays resident};
+    \node[font=\scriptsize] at (9.4,-0.85) {fix: \texttt{f16} (half the bytes, twice as much stays resident)};
   \end{tikzpicture}}
   \end{center}
-  Two culprits, one thread range: the \textbf{lock} on dense data, the \textbf{cache} on sparse --- the data's shape decides which binds.
+  Two culprits, one thread range: the \textbf{lock} on dense data, the \textbf{cache} on sparse. The data's shape decides which binds.
 \end{frame}
 
 \begin{frame}{Ceiling (iii): On-Socket Memory-Traffic Pressure}
@@ -331,7 +331,7 @@ Reviewers: Prof.\ Dr.\ Volker Markl, Prof.\ Dr.\ Matthias B\"ohm \quad Advisor: 
     \end{tabular}
   \end{center}
   \begin{itemize}
-    \item B vs A: removing all cross-socket traffic saves \good{11--13\%} --- that saving \emph{is} the link cost
+    \item B vs A: removing all cross-socket traffic saves \good{11--13\%}: that saving \emph{is} the link cost
     \item C vs A: ``fair'' page balancing costs \bad{26--41\%}: half of all accesses land remote, and the per-page alternation defeats the prefetcher
     \item D $\approx$ A: even the worst case matches default $\to$ the baseline was already paying the link
   \end{itemize}
@@ -341,7 +341,7 @@ Reviewers: Prof.\ Dr.\ Volker Markl, Prof.\ Dr.\ Matthias B\"ohm \quad Advisor: 
 \section{Results: Negative Composability}
 
 \begin{frame}{Finding 2: Optimisations Compose Negatively}
-  \bcombo{} $=$ \texttt{pooled f16 simd pin-cores cluster-prefetch mimalloc} --- each regime-best somewhere; $0.773\times$ default wall at $t{=}16$.\\
+  \bcombo{} $=$ \texttt{pooled f16 simd pin-cores cluster-prefetch mimalloc} (each regime-best somewhere), $0.773\times$ default wall at $t{=}16$.\\
   {\footnotesize Layering one more optimisation on top:}
   \begin{center}
     \footnotesize
@@ -360,19 +360,19 @@ Reviewers: Prof.\ Dr.\ Volker Markl, Prof.\ Dr.\ Matthias B\"ohm \quad Advisor: 
   {\footnotesize qbatch: batch $K$ queries per cluster visit \quad morsel: cross-worker coordination \quad \texttt{local-ids}: per-cluster renumbering}
   \begin{itemize}
     \item The coarser optimisation absorbed the headroom; the finer one's overhead turns net cost
-    \item All five plausible arguments falsified by \texttt{perf} --- five axes, one shape: structural, not coincidence
+    \item All five plausible arguments falsified by \texttt{perf}. Five axes, one shape: structural, not coincidence
   \end{itemize}
 \end{frame}
 
 \begin{frame}{Finding 3: Pre-Flight Ceiling Identification}
-  Classical ablation: build $\to$ measure vs default $\to$ keep if faster. Assumes independence --- falsified five times on the last slide.
+  Classical ablation: build $\to$ measure vs default $\to$ keep if faster. Assumes independence. The last slide falsified that five times.
   \vfill
   Before writing code:
   \begin{enumerate}
     \item Probe the binding ceiling at the target composition (\texttt{perf})
     \item Axis no longer binds there? Stop
     \item Predict the saving (bandwidth-budget arithmetic)
-    \item Measure where the ceiling binds; separate saving from overhead
+    \item Measure where the ceiling binds, separating saving from overhead
     \item A negative composition counts as a result
   \end{enumerate}
   \vfill
@@ -383,7 +383,7 @@ Reviewers: Prof.\ Dr.\ Volker Markl, Prof.\ Dr.\ Matthias B\"ohm \quad Advisor: 
   \begin{itemize}
     \item No dominating build $\to$ per-regime selection: $(n_\text{hists}, t) \to$ build $+$ flags
     \item \bcombo{} at moderate $t$ / big data; \texttt{packed-ids} at $t{=}64$; qbatch at $t{=}96$; columnar at low $t$; default on small data
-    \item In-distribution: \good{17/18} exact, \good{18/18} within 5\% --- combined with OOD: \good{23/24}
+    \item In-distribution: \good{17/18} exact, \good{18/18} within 5\%, and \good{23/24} combined with OOD
   \end{itemize}
   \smallskip
   Out-of-distribution validation (\texttt{c1024\_56gb}, $3.2\times$ sparser, never tuned on):
@@ -401,7 +401,7 @@ Reviewers: Prof.\ Dr.\ Volker Markl, Prof.\ Dr.\ Matthias B\"ohm \quad Advisor: 
     \end{tabular}
   \end{center}
   \smallskip
-  Boundaries are machine-specific; the probing procedure is not.
+  Boundaries are machine-specific. The probing procedure is not.
 \end{frame}
 
 % ---------------------------------------------------------------- 5. Speedup
@@ -436,13 +436,13 @@ Reviewers: Prof.\ Dr.\ Volker Markl, Prof.\ Dr.\ Matthias B\"ohm \quad Advisor: 
 
 \begin{frame}{Positioning Against the State of the Art}
   \begin{itemize}
-    \item \textbf{Layout --- adopted.} Manegold et al.\ [2000]: memory access dominates in-memory work $\to$ our SoA layout
-    \item \textbf{Search --- refuted.} FAST [Kim 2010], Eytzinger [Khuong, Morin 2017], $k$-ary [Schlegel 2009], PGM [Ferragina 2020]: all assume latency-bound search --- ceiling (i) says no, on this workload
-    \item \textbf{Execution --- followed.} Neumann [2011]: compile, don't interpret $\to$ the port itself; morsel-driven [Leis 2014] $\to$ work-stealing
-    \item \textbf{Composition --- challenged.} Selinger [1979], Caladan [2020], memory-wall [Wulf, McKee 1995]: all assume gains compose $\to$ five mechanism-grounded counterexamples $+$ a falsifiable pre-flight check
+    \item \textbf{Layout: adopted.} Manegold et al.\ [2000]: memory access dominates in-memory work $\to$ our SoA layout
+    \item \textbf{Search: refuted.} FAST [Kim 2010], Eytzinger [Khuong, Morin 2017], $k$-ary [Schlegel 2009], PGM [Ferragina 2020]: all assume latency-bound search. Ceiling (i) says no on this workload
+    \item \textbf{Execution: followed.} Neumann [2011]: compile, don't interpret $\to$ the port itself; morsel-driven [Leis 2014] $\to$ work-stealing
+    \item \textbf{Composition: challenged.} Selinger [1979], Caladan [2020], memory-wall [Wulf, McKee 1995]: all assume gains compose $\to$ five mechanism-grounded counterexamples $+$ a falsifiable pre-flight check
   \end{itemize}
   \vfill
-  Gap filled: first hardware characterisation of histogram-based percentile search; first horizontal-SIMD measurement on Sapphire Rapids.
+  Gap filled: the first hardware characterisation of histogram-based percentile search, and the first horizontal-SIMD measurement on Sapphire Rapids.
 \end{frame}
 
 % ---------------------------------------------------------------- 7. Wrap-up
@@ -457,7 +457,7 @@ Reviewers: Prof.\ Dr.\ Volker Markl, Prof.\ Dr.\ Matthias B\"ohm \quad Advisor: 
     \item Dispatch-on-regime policy, 23/24 within 5\% incl.\ OOD \hfill \emph{engineering}
   \end{enumerate}
   \vfill
-  (1) and (5) are the staging ground; (2)--(4) generalise.
+  (1) and (5) are the staging ground. (2)--(4) generalise.
 \end{frame}
 
 \begin{frame}{Future Work}
@@ -473,7 +473,7 @@ Reviewers: Prof.\ Dr.\ Volker Markl, Prof.\ Dr.\ Matthias B\"ohm \quad Advisor: 
 \begin{frame}{Closing Remark}
   \begin{itemize}
     \item The speedups are specific to this codebase, machine, and workload
-    \item What generalises: whether optimisation $B$ helps depends on which ceiling $A$ already collected --- invisible to per-operator cost models
+    \item What generalises: whether optimisation $B$ helps depends on which ceiling $A$ already collected, which per-operator cost models cannot see
   \end{itemize}
   \vfill
   \begin{alertblock}{Closing remark}
@@ -518,7 +518,7 @@ Reviewers: Prof.\ Dr.\ Volker Markl, Prof.\ Dr.\ Matthias B\"ohm \quad Advisor: 
     \end{enumerate}
   \end{columns}
   \vfill
-  Clusters are independent $\to$ the cluster loop parallelises. Search $=$ few dependent reads; emit $=$ many writes.
+  Clusters are independent $\to$ the cluster loop parallelises. Search $=$ few dependent reads, emit $=$ many writes.
 \end{frame}
 
 \begin{frame}{Backup: Why is end-to-end $530\times$ if search is only $1.34\times$?}
@@ -578,7 +578,7 @@ Reviewers: Prof.\ Dr.\ Volker Markl, Prof.\ Dr.\ Matthias B\"ohm \quad Advisor: 
 \begin{frame}{Backup: How was correctness validated?}
   \begin{itemize}
     \item Every Rust build validates bitwise-identical against the Python reference across all workloads: precision $=$ recall $=$ 1.000.
-    \item Validation runs inside the benchmark harness, so each measured configuration is also a correctness check. Suppress mode is a stopwatch setting only; correctness is always checked with results on.
+    \item Validation runs inside the benchmark harness, so each measured configuration is also a correctness check. Suppress mode is a stopwatch setting only. Correctness is always checked with results on.
     \item Rebinning kernel: verified against the Python reference on 200 queries. Rust rounds half-away, NumPy uses banker's rounding. The maximum cumulative difference is $10^{-4}$ at a handful of rows, with no effect on sort order or query results.
     \item The kernel falls back to the Python pipeline if the extension is not importable or for \texttt{cubic\_spline} bin estimation.
   \end{itemize}
